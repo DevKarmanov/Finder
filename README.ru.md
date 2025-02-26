@@ -133,7 +133,7 @@
     - `404 Not Found`: Если объявление с указанным идентификатором не существует.
 
 <div align="center">
-    <img src="https://xusss123.github.io/ImagesForFinderProject/imagesForGitHub/get_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
+    <img src="https://devkarmanov.github.io/ImagesForFinderProject/imagesForGitHub/get_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
     <p><strong>Эта схема представляет собой упрощенный идеальный вариант запроса</strong></p>
 </div>
 
@@ -246,7 +246,7 @@
     - `500 Internal Server Error`: Если произошла ошибка во время процесса получения.
 
 <div align="center">
-    <img src="https://xusss123.github.io/ImagesForFinderProject/imagesForGitHub/get_complaint_request.svg" alt="Схема работы запроса" style="width:80%;"/>
+    <img src="https://devkarmanov.github.io/ImagesForFinderProject/imagesForGitHub/get_complaint_request.svg" alt="Схема работы запроса" style="width:80%;"/>
     <p><strong>Эта схема представляет собой упрощенный идеальный вариант запроса</strong></p>
 </div>
 
@@ -266,7 +266,7 @@
     - `500 Internal Server Error`: Если возникла проблема во время процесса создания объявления.
 
 <div align="center">
-    <img src="https://xusss123.github.io/ImagesForFinderProject/imagesForGitHub/add_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
+    <img src="https://devkarmanov.github.io/ImagesForFinderProject/imagesForGitHub/add_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
     <p><strong>Эта схема представляет собой упрощенный идеальный вариант запроса</strong></p>
 </div>
 
@@ -330,7 +330,7 @@
     - `500 Internal Server Error`: В случае ошибки во время процесса удаления.
 
 <div align="center">
-    <img src="https://xusss123.github.io/ImagesForFinderProject/imagesForGitHub/delete_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
+    <img src="https://devkarmanov.github.io/ImagesForFinderProject/imagesForGitHub/delete_card_request.svg" alt="Схема работы запроса" style="width:80%;"/>
     <p><strong>Эта схема представляет собой упрощенный идеальный вариант запроса</strong></p>
 </div>
 
