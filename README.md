@@ -372,7 +372,7 @@ Manages announcements and their content, including user complaints
 - **Description**: Search for desired maps by query.
 - **Path Parameter**:
   - `limit` (optional, default: 5) — The maximum number of complaints to return.
-  - `page` (optional, default: 0) — The page number for pagination.
+  - `pageNumber` (optional, default: 0) — The page number for pagination.
   - `query` — Information you need.
   - `createTime` (optional) — search filter from this date.
 - **Request Header**:
