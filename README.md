@@ -526,19 +526,32 @@ Manages user authentication and authorization
     - `200 OK`: Returns user details:
       ```json
       {
-        "id": 7,
-        "name": "johndoe123456789",
-        "email": "johndoe@example.com",
-        "role": [
-            "USER",
-            "ADMIN"
-        ],
-        "firstName": "John",
-        "lastName": "Doe",
-        "description": "A passionate developer with experience in Java and microservices.",
-        "country": "Belarus",
-        "roleInCommand": "Lead Developer",
-        "skills": "Java, Spring Boot, Microservices, Docker, Kubernetes"
+	    "id": 2,
+	    "name": "venik",
+	    "email": "example@mail.com",
+	    "role": [
+	        "USER"
+	    ],
+	    "firstName": "name",
+	    "lastName": "surname",
+	    "description": "asd",
+	    "country": "Беларусь",
+	    "roleInCommand": "asd",
+	    "skills": "asd",
+	    "profileImage": {
+	        "imageName": null,
+	        "bucketName": null
+	    },
+	    "userCards": [
+	        {
+	            "title": "тест",
+	            "text": "тестовый"
+	        },
+	        {
+	            "title": "тест2",
+	            "text": "тестовый2"
+	        }
+	    ]
       }
       ```
     - `500 Internal Server Error`: If there is a server error.
