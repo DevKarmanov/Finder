@@ -524,19 +524,32 @@
     - `200 OK`: Возвращает данные пользователя:
       ```json
       {
-        "id": 7,
-        "name": "johndoe123456789",
-        "email": "johndoe@example.com",
-        "role": [
-            "USER",
-            "ADMIN"
-        ],
-        "firstName": "John",
-        "lastName": "Doe",
-        "description": "Увлеченный разработчик с опытом в Java и микросервисах.",
-        "country": "Беларусь",
-        "roleInCommand": "Ведущий разработчик",
-        "skills": "Java, Spring Boot, Microservices, Docker, Kubernetes"
+	    "id": 2,
+	    "name": "venik",
+	    "email": "example@mail.com",
+	    "role": [
+	        "USER"
+	    ],
+	    "firstName": "name",
+	    "lastName": "surname",
+	    "description": "asd",
+	    "country": "Беларусь",
+	    "roleInCommand": "asd",
+	    "skills": "asd",
+	    "profileImage": {
+	        "imageName": null,
+	        "bucketName": null
+	    },
+	    "userCards": [
+	        {
+	            "title": "тест",
+	            "text": "тестовый"
+	        },
+	        {
+	            "title": "тест2",
+	            "text": "тестовый2"
+	        }
+	    ]
       }
       ```
     - `500 Internal Server Error`: В случае ошибки сервера.
