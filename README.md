@@ -558,24 +558,29 @@ Manages user authentication and authorization
 
 ---
 
-#### **6. PATCH** `/user/patch`
+#### **6. PATCH** `/user/patch`.
 
-- **Description**: Update selected fields of the authenticated user.
+- **Description**: Updates the selected fields of the authenticated user.
 - **Request Header**:
-    - `Authorization` — The JWT token for authentication.
-- **Request Parameters** *(All fields are optional)*:
-    - `name` — New user name. *(If you change this field, you will have to take a new access token)*
-    - `email` — New email address.
-    - `firstName` — New first name.
-    - `lastName` — New last name.
-    - `description` — New description for the user.
-    - `country` — New country of residence.
-    - `roleInCommand` — New role within the command/project.
-    - `skills` — New skills of the user.
+    - `Authorization` - JWT token for authentication.
+    - `Content-Type: application/json` - Mandatory header for JSON data.
+- **Request Body** (JSON object, all fields are optional):
+    ```json
+    {
+    "name": "string",   
+    "email": "string", 
+    "firstName": "string", 
+    "lastName": "string",
+    "description": "string",
+    "country": "string",
+    "roleInCommand": "string",
+    "skills": "string"
+    }
+    ```
 - **Response Codes**:
-    - `200 OK`: Returns success message.
-    - `400 Bad Request`: If the request contains invalid data or some of the optional parameters are incorrect.
-
+    - ``200 OK`: Successful update.
+    - `400 Bad Request`: Invalid data in the request.
+  
 ---
 
 #### **7. DELETE** `/user/del`
