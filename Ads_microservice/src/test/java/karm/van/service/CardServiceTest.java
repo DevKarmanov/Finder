@@ -108,7 +108,7 @@ public class CardServiceTest {
 
         doNothing().when(cardServiceSpy).checkToken("token");
 
-        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto("title","text"),"Bearer token"));
+        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto(1L,"title","text"),"Bearer token"));
 
     }
 }
