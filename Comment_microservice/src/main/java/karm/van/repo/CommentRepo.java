@@ -9,13 +9,15 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CommentRepo extends JpaRepository<CommentModel,Long> {
-    List<CommentModel> getCommentModelByCard_Id(Long id);
+    List<CommentModel> getCommentModelByCardId(Long id);
 
-    Page<CommentModel> getCommentModelByCard_Id(Long id, Pageable pageable);
+    Page<CommentModel> getCommentModelByCardIdAndParentCommentIsNull(Long id, Pageable pageable);
+
     Page<CommentModel> getCommentModelsByParentComment_Id(Long parentCommentId, Pageable pageable);
 
+    CommentModel findCommentModelById(Long id);
 
-    void deleteAllByCard_Id(Long id);
+    void deleteAllByCardId(Long id);
 
     Optional<CommentModel> getCommentModelById(Long id);
 }

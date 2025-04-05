@@ -3,13 +3,13 @@ package karm.van.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import karm.van.config.AdsMicroServiceProperties;
 import karm.van.config.AuthMicroServiceProperties;
 import karm.van.config.ImageMicroServiceProperties;
 import karm.van.dto.request.RecoveryRequest;
 import karm.van.dto.request.UserDtoRequest;
+import karm.van.dto.request.UserPatchRequest;
 import karm.van.dto.response.*;
 import karm.van.exception.*;
 import karm.van.model.MyUser;
@@ -26,21 +26,20 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.Jedis;
 
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 @Log4j2
 public class MyUserService {
     private final MyUserRepo userRepo;
-    private JedisPooled redis;
+    private final Jedis redis;
     private final ObjectMapper objectMapper;
     private final PasswordEncoder passwordEncoder;
     private final AdsMicroServiceProperties adsProperties;
@@ -54,16 +53,8 @@ public class MyUserService {
     @Value("${microservices.x-api-key}")
     private String apiKey;
 
-    @Value("${redis.host}")
-    private String redisHost;
-
     @Value("${server.port}")
     private String serverPort;
-
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
-    }
 
     public UserDtoResponse getUser(Authentication authentication, Optional<Long> userIdOpt) throws UsernameNotFoundException, BadCredentialsException {
 
@@ -404,14 +395,7 @@ public class MyUserService {
 
     @Transactional
     public void patchUser(Authentication authentication,
-                          Optional<String> nameOpt,
-                          Optional<String> emailOpt,
-                          Optional<String> firstNameOpt,
-                          Optional<String> lastNameOpt,
-                          Optional<String> descriptionOpt,
-                          Optional<String> countryOpt,
-                          Optional<String> roleInCommandOpt,
-                          Optional<String> skillsOpt) {
+                          UserPatchRequest userPatchRequest) {
 
         MyUser user = userRepo.findByName(authentication.getName())
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
@@ -419,52 +403,48 @@ public class MyUserService {
         String redisKey = "user_"+authentication.getName();
 
 
-        nameOpt.ifPresent(name -> {
+        userPatchRequest.name().ifPresent(name -> {
             if (name.trim().isEmpty()) {
                 throw new IllegalArgumentException("Name cannot be blank");
             }
             user.setName(name);
         });
 
-        emailOpt.ifPresent(email -> {
-            if (!isValidEmail(email)) {
-                throw new IllegalArgumentException("Invalid email format");
+        userPatchRequest.email().ifPresent(email -> {
+            if (!userRepo.existsByEmail(email)) {
+                user.setEmail(email);
             }
-            if (userRepo.existsByEmail(email)) {
-                throw new IllegalArgumentException("Email is already in use");
-            }
-            user.setEmail(email);
         });
 
-        firstNameOpt.ifPresent(firstName -> {
+        userPatchRequest.firstName().ifPresent(firstName -> {
             if (firstName.trim().isEmpty()) {
                 throw new IllegalArgumentException("First name cannot be blank");
             }
             user.setFirstName(firstName);
         });
 
-        lastNameOpt.ifPresent(lastName -> {
+        userPatchRequest.lastName().ifPresent(lastName -> {
             if (lastName.trim().isEmpty()) {
                 throw new IllegalArgumentException("Last name cannot be blank");
             }
             user.setLastName(lastName);
         });
 
-        descriptionOpt.ifPresent(description -> {
+        userPatchRequest.description().ifPresent(description -> {
             if (description.trim().isEmpty()) {
                 throw new IllegalArgumentException("Description cannot be blank");
             }
             user.setDescription(description);
         });
 
-        countryOpt.ifPresent(country -> {
+        userPatchRequest.country().ifPresent(country -> {
             if (country.trim().isEmpty()) {
                 throw new IllegalArgumentException("Country cannot be blank");
             }
             user.setCountry(country);
         });
 
-        roleInCommandOpt.ifPresent(roleInCommand -> {
+        userPatchRequest.roleInCommand().ifPresent(roleInCommand -> {
             if (roleInCommand.trim().isEmpty()) {
                 throw new IllegalArgumentException("Role in command cannot be blank");
             }
@@ -472,7 +452,7 @@ public class MyUserService {
         });
 
 
-        skillsOpt.ifPresent(skills -> {
+        userPatchRequest.skills().ifPresent(skills -> {
             if (skills.length() > 255) {
                 throw new IllegalArgumentException("Skills should not exceed 255 characters");
             }
@@ -481,12 +461,6 @@ public class MyUserService {
 
         userRepo.save(user);
         redis.del(redisKey);
-    }
-
-    private boolean isValidEmail(String email) {
-        String emailRegex = "^[a-zA-Z0-9_+&*-]+(?:\\.[a-zA-Z0-9_+&*-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,7}$";
-        Pattern pat = Pattern.compile(emailRegex);
-        return pat.matcher(email).matches();
     }
 
     @Transactional

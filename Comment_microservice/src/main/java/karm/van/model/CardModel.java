@@ -32,8 +32,4 @@ public class CardModel {
 
     @Column(name = "createTime")
     private LocalDateTime createTime;
-
-    @OneToMany(cascade = CascadeType.ALL,mappedBy = "card")
-    @JsonManagedReference
-    private List<CommentModel> comments;
 }

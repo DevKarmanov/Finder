@@ -3,6 +3,7 @@ package karm.van.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import jakarta.servlet.http.HttpServletRequest;
 import karm.van.dto.request.RecoveryRequest;
+import karm.van.dto.request.UserPatchRequest;
 import karm.van.exception.*;
 import karm.van.service.MyUserService;
 import lombok.RequiredArgsConstructor;
@@ -55,27 +56,11 @@ public class UserController {
     }
 
     @PatchMapping("/patch")
-    public ResponseEntity<?> patchUser(@RequestParam(required = false) Optional<String> name,
-                                       @RequestParam(required = false) Optional<String> email,
-                                       @RequestParam(required = false) Optional<String> firstName,
-                                       @RequestParam(required = false) Optional<String> lastName,
-                                       @RequestParam(required = false) Optional<String> description,
-                                       @RequestParam(required = false) Optional<String> country,
-                                       @RequestParam(required = false) Optional<String> roleInCommand,
-                                       @RequestParam(required = false) Optional<String> skills){
-
-
+    public ResponseEntity<?> patchUser(@RequestBody UserPatchRequest userPatchRequest){
         try {
             myUserService.patchUser(
                     SecurityContextHolder.getContext().getAuthentication(),
-                    name,
-                    email,
-                    firstName,
-                    lastName,
-                    description,
-                    country,
-                    roleInCommand,
-                    skills
+                    userPatchRequest
             );
             return ResponseEntity.ok("User successfully changed");
         }catch (IllegalArgumentException e){

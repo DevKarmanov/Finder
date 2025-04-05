@@ -47,6 +47,9 @@ spring:
     uris: http://${ELASTIC_HOST:localhost}:9200
     username: ${ELASTIC_USERNAME:my_user}
     password: ${ELASTIC_PASSWORD:ELASTIC_LOCAL_PASSWORD}
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
 
 server:
   port: 8080

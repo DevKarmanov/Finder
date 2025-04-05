@@ -2,7 +2,6 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import karm.van.config.AuthenticationMicroServiceProperties;
 import karm.van.dto.CommentAuthorDto;
 import karm.van.dto.CommentDto;
@@ -30,11 +29,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.Jedis;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -46,17 +46,9 @@ public class CommentService {
     private final AuthenticationMicroServiceProperties authProperties;
     private final ApiService apiService;
 
-    @Value("${redis.host}")
-    private String redisHost;
-
     @Value("${microservices.x-api-key}")
     private String apiKey;
-    private JedisPooled redis;
-
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
-    }
+    private final Jedis redis;
 
     private void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,
@@ -157,7 +149,7 @@ public class CommentService {
 
             CommentModel commentModel = CommentModel.builder()
                     .text(commentDto.text())
-                    .card(cardModel)
+                    .cardId(cardModel.getId())
                     .userId(user.id())
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -165,6 +157,8 @@ public class CommentService {
             commentRepo.save(commentModel);
 
             requestToLinkCommentAndUser(commentModel.getId(),token);
+
+            invalidateCardCommentsCache(cardId);
         } catch (InvalidDataException | CardNotFoundException e){
             throw e;
         } catch (Exception e){
@@ -212,8 +206,8 @@ public class CommentService {
         checkToken(token);
         try {
             if (cardRepo.existsById(cardId)){// Проверяем существует ли такая карточка
-                String commentsKeyForCache = "card:"+cardId+":limit:"+limit+":page:"+page; // Ключ в редисе от списка комментариев
-                Page<CommentModel> comments = commentRepo.getCommentModelByCard_Id(cardId, PageRequest.of(page,limit));
+                String commentsKeyForCache = "comments:card:" + cardId; // Ключ в редисе от списка комментариев
+                Page<CommentModel> comments = commentRepo.getCommentModelByCardIdAndParentCommentIsNull(cardId, PageRequest.of(page,limit));
                 return cacheComments(comments,commentsKeyForCache,token,limit);
             }else {
                 throw new CardNotFoundException("Card with this id doesn't exist");
@@ -249,12 +243,9 @@ public class CommentService {
         String token = authorization.substring(7);
         checkToken(token);
         try {
-            List<CommentModel> comments = commentRepo.getCommentModelByCard_Id(cardId);
-            String commentsKeyForCache = "comments:card:%d".formatted(cardId);
-
-            if (redis.exists(commentsKeyForCache)){
-                redis.del(commentsKeyForCache);
-            }
+            List<CommentModel> comments = commentRepo.getCommentModelByCardId(cardId);
+            invalidateCardCommentsCache(cardId);
+            comments.forEach(comment->invalidateReplyCommentsCache(comment.getId()));
 
             if (!comments.isEmpty()){
                 comments.parallelStream().forEach(comment->{
@@ -264,7 +255,7 @@ public class CommentService {
                         throw new RuntimeException(e.getMessage());
                     }
                 });
-                commentRepo.deleteAllByCard_Id(cardId);
+                commentRepo.deleteAllByCardId(cardId);
             }
         } catch (Exception e){
             log.debug("An unknown error occurred while deleting the card: "+e.getMessage()+" - "+e.getClass());
@@ -301,6 +292,8 @@ public class CommentService {
             commentModel.setText(commentText);
 
             commentRepo.save(commentModel);
+            invalidateCardCommentsCache(commentModel.getCardId());
+            invalidateReplyCommentsCache(commentId);
         } catch (InvalidDataException | CommentNotFoundException e){
             throw e;
         } catch (Exception e){
@@ -318,6 +311,8 @@ public class CommentService {
         checkPermissions(commentModel,token);
         requestToUnlinkCommentFromUser(token,commentId,commentModel.getUserId());
         commentRepo.deleteById(commentId);
+        invalidateCardCommentsCache(commentModel.getCardId());
+        invalidateReplyCommentsCache(commentId);
     }
 
     @Transactional
@@ -338,6 +333,7 @@ public class CommentService {
 
         CommentModel commentModel = CommentModel.builder()
                 .text(commentDto.text())
+                .cardId(parentComment.getCardId())
                 .parentComment(parentComment)
                 .userId(user.id())
                 .createdAt(LocalDateTime.now())
@@ -346,18 +342,37 @@ public class CommentService {
         commentRepo.save(commentModel);
 
         requestToLinkCommentAndUser(commentModel.getId(),token);
-
+        invalidateCardCommentsCache(commentModel.getCardId());
+        invalidateReplyCommentsCache(commentId);
     }
 
     public List<CommentDtoResponse> getReplyComments(Long commentId, int limit, int page, String authorization) throws TokenNotExistException, SerializationException, CommentNotFoundException {
         String token = authorization.substring(7);
         checkToken(token);
         if (commentRepo.existsById(commentId)){
-            String keyForCache = "parentComment:"+commentId+":limit:"+limit+":page:"+page;
+            String keyForCache = "comments:reply:" + commentId;
             Page<CommentModel> comments = commentRepo.getCommentModelsByParentComment_Id(commentId, PageRequest.of(page,limit));
             return cacheComments(comments,keyForCache,token,limit);
         }else {
             throw new CommentNotFoundException("Comment with this id doesn't exist");
+        }
+    }
+
+    private void invalidateCardCommentsCache(Long cardId) {
+        // Удаляем все ключи, связанные с комментариями карточки
+        String pattern = "comments:card:" + cardId + "*";
+        Set<String> keys = redis.keys(pattern);
+        if (!keys.isEmpty()) {
+            redis.del(keys.toArray(new String[0]));
+        }
+    }
+
+    private void invalidateReplyCommentsCache(Long commentId) {
+        // Удаляем все ключи, связанные с ответами на комментарий
+        String pattern = "comments:reply:" + commentId + "*";
+        Set<String> keys = redis.keys(pattern);
+        if (!keys.isEmpty()) {
+            redis.del(keys.toArray(new String[0]));
         }
     }
 }

@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPooled;
 
 import java.util.ArrayList;
@@ -36,18 +37,11 @@ public class ComplaintService {
     private final ApiService apiService;
     private final AuthenticationMicroServiceProperties authProperties;
     private final CardRepo cardRepo;
-    private JedisPooled redis;
+    private final Jedis redis;
     private final ObjectMapper objectMapper;
 
-    @Value("${redis.host}")
-    private String redisHost;
     @Value("${microservices.x-api-key}")
     private String apiKey;
-
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
-    }
 
     private void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,

@@ -2,8 +2,6 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import karm.van.dto.complaint.ComplaintType;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.config.properties.CommentMicroServiceProperties;
 import karm.van.config.properties.ImageMicroServiceProperties;
@@ -11,6 +9,7 @@ import karm.van.dto.card.CardDto;
 import karm.van.dto.card.CardPageResponseDto;
 import karm.van.dto.card.ElasticPatchDto;
 import karm.van.dto.card.FullCardDtoForOutput;
+import karm.van.dto.complaint.ComplaintType;
 import karm.van.dto.image.ImageDto;
 import karm.van.dto.message.EmailDataDto;
 import karm.van.dto.user.UserDtoRequest;
@@ -42,7 +41,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.Jedis;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -54,7 +53,7 @@ import java.util.Optional;
 @Slf4j
 public class CardService {
     private final CardRepo cardRepo;
-    private JedisPooled redis;
+    private final Jedis redis;
     private final ObjectMapper objectMapper;
     private final CommentMicroServiceProperties commentProperties;
     private final ImageMicroServiceProperties imageProperties;
@@ -63,8 +62,6 @@ public class CardService {
     private final ComplaintRepo complaintRepo;
     private final BrokerProducer brokerProducer;
 
-    @Value("${redis.host}")
-    private String redisHost;
 
     @Value("${microservices.x-api-key}")
     private String apiKey;
@@ -75,9 +72,12 @@ public class CardService {
     @Value("${email.settings.send}")
     private boolean send;
 
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
+    void validateText(String title, String text) throws CardNotSavedException {
+        if (title==null || text==null){
+            throw new CardNotSavedException("The title and text should not be null");
+        }else if (title.trim().isEmpty() || text.trim().isEmpty()){
+            throw new CardNotSavedException("The title and text should not be empty");
+        }
     }
 
     private CardModel addCardText(CardDto cardDto) throws CardNotSavedException {
@@ -85,9 +85,7 @@ public class CardService {
         String title = cardDto.title();
         String text = cardDto.text();
 
-        if (title.trim().isEmpty() || text.trim().isEmpty()){
-            throw new CardNotSavedException("The title and text should not be empty");
-        }
+        validateText(title,text);
 
         CardModel cardModel = CardModel.builder()
                 .title(cardDto.title())
@@ -104,9 +102,7 @@ public class CardService {
             String title = cardDto.title();
             String text = cardDto.text();
 
-            if (title.trim().isEmpty() || text.trim().isEmpty()){
-                throw new CardNotSavedException("The title and text should not be empty");
-            }
+            validateText(title,text);
 
             cardModel.setTitle(title);
             cardModel.setText(text);
@@ -118,7 +114,7 @@ public class CardService {
         }
     }
 
-    private void checkToken(String token) throws TokenNotExistException {
+    void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,
                 apiService.buildUrl(authenticationProperties.getPrefix(),
                         authenticationProperties.getHost(),
@@ -130,7 +126,7 @@ public class CardService {
         }
     }
 
-    private UserDtoRequest requestToGetUserByToken(String token) throws UsernameNotFoundException {
+    UserDtoRequest requestToGetUserByToken(String token) throws UsernameNotFoundException {
         UserDtoRequest user = apiService.getUserByToken(apiService.buildUrl(
                 authenticationProperties.getPrefix(),
                 authenticationProperties.getHost(),
@@ -145,7 +141,7 @@ public class CardService {
         return user;
     }
 
-    private UserDtoRequest requestToGetUserById(String token, Long userId) throws UsernameNotFoundException {
+    UserDtoRequest requestToGetUserById(String token, Long userId) throws UsernameNotFoundException {
         UserDtoRequest user = apiService.getUserById(apiService.buildUrl(
                 authenticationProperties.getPrefix(),
                 authenticationProperties.getHost(),
@@ -160,7 +156,7 @@ public class CardService {
         return user;
     }
 
-    private List<Long> requestToAddCardImages(List<MultipartFile> files, String token) throws ImageNotSavedException {
+    List<Long> requestToAddCardImages(List<MultipartFile> files, String token) throws ImageNotSavedException {
         String url = apiService.buildUrl(imageProperties.getPrefix(),
                 imageProperties.getHost(),
                 imageProperties.getPort(),
@@ -175,7 +171,7 @@ public class CardService {
         return imagesId;
     }
 
-    private void requestToLinkCardAndUser(CardModel cardModel, String token) throws CardNotSavedException {
+    void requestToLinkCardAndUser(CardModel cardModel, String token) throws CardNotSavedException {
         String url = apiService.buildUrl(
                 authenticationProperties.getPrefix(),
                 authenticationProperties.getHost(),
@@ -183,16 +179,19 @@ public class CardService {
                 authenticationProperties.getEndpoints().getAddCardToUser(),
                 cardModel.getId());
 
+        HttpStatusCode result;
+
         try {
-            if (apiService.addCardToUser(url,token,apiKey) != HttpStatus.OK){
-                log.error("The error occurred while the user was being assigned a card");
-                throw new CardNotSavedException("An error occurred with saving");
-            }
-        }catch (NullPointerException | CardNotSavedException e){
-            log.error("class: " + e.getClass() + ", message: " + e.getMessage());
+            result = apiService.addCardToUser(url, token, apiKey);
+        } catch (NullPointerException e) {
+            log.error("Method addCardToUser returned the value null");
             throw e;
         }
 
+        if (result != HttpStatus.OK) {
+            log.error("The error occurred while the user was being assigned a card");
+            throw new CardNotSavedException("An error occurred with saving");
+        }
     }
 
     @Async
@@ -615,7 +614,7 @@ public class CardService {
 
         return cardRepo.findAllByUserId(userId)
                 .parallelStream()
-                .map(card->new CardDto(card.getTitle(),card.getText()))
+                .map(card->new CardDto(card.getId(), card.getTitle(),card.getText()))
                 .toList();
 
     }

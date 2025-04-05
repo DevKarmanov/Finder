@@ -2,7 +2,6 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.config.properties.ImageMicroServiceProperties;
 import karm.van.dto.card.CardPageResponseDto;
@@ -21,7 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.Jedis;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -30,7 +29,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class ElasticService {
-    private JedisPooled redis;
+    private final Jedis redis;
     private final ObjectMapper objectMapper;
     private final ElasticRepo elasticRepo;
     private final CardRepo cardRepo;
@@ -38,16 +37,8 @@ public class ElasticService {
     private final ImageMicroServiceProperties imageProperties;
     private final AuthenticationMicroServiceProperties authenticationProperties;
 
-    @Value("${redis.host}")
-    private String redisHost;
-
     @Value("${microservices.x-api-key}")
     private String apiKey;
-
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
-    }
 
     private void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,

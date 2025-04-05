@@ -26,9 +26,8 @@ public class CommentModel {
 
     private LocalDateTime createdAt;
 
-    @ManyToOne
-    @JsonBackReference
-    private CardModel card;
+    @Column(name = "card_id")
+    private Long cardId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_comment_id")
@@ -38,4 +37,15 @@ public class CommentModel {
     private List<CommentModel> replyComments;
 
     private Long userId;
+
+    @Override
+    public String toString() {
+        return "CommentModel{" +
+                "id=" + id +
+                ", text='" + text + '\'' +
+                ", createdAt=" + createdAt +
+                ", cardId=" + cardId +
+                ", userId=" + userId +
+                '}';
+    }
 }
