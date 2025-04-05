@@ -544,10 +544,12 @@ Manages user authentication and authorization
 	    },
 	    "userCards": [
 	        {
+                   "id": "1",
 	            "title": "тест",
 	            "text": "тестовый"
 	        },
 	        {
+                    "id":"2",
 	            "title": "тест2",
 	            "text": "тестовый2"
 	        }
