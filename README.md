@@ -447,7 +447,8 @@ Manages user authentication and authorization
   "description": "A passionate developer with experience in Java and microservices.",
   "country": "Belarus",
   "roleInCommand": "Lead Developer",
-  "skills": "Java, Spring Boot, Microservices, Docker, Kubernetes"
+  "skills": "Java, Spring Boot, Microservices, Docker, Kubernetes",
+  "adminKey": "uuusmxczx-xzcnjas-asdnasjdn"
 }
 ```   
 - **Response Codes**:
