@@ -48,7 +48,7 @@ public class CardServiceTest {
 
     @Test
     void checkInvalidText() {
-        assertThrows(CardNotSavedException.class,()->cardService.validateText("","",""));
+        assertThrows(CardNotSavedException.class,()->cardService.validateText("",""));
     }
 
     @Test
@@ -107,7 +107,7 @@ public class CardServiceTest {
 
         doNothing().when(cardServiceSpy).checkToken("token");
 
-        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto(1L,"title","text","tags"),"Bearer token"));
+        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto(1L,"title","text",List.of("tag1","tag2")),"Bearer token"));
 
     }
 }
