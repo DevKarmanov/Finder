@@ -2,6 +2,7 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.config.properties.CommentMicroServiceProperties;
 import karm.van.config.properties.ImageMicroServiceProperties;
@@ -41,19 +42,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import redis.clients.jedis.Jedis;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class CardService {
     private final CardRepo cardRepo;
-    private final Jedis redis;
+    private final RedisCommands<String,String> redisCommands;
     private final ObjectMapper objectMapper;
     private final CommentMicroServiceProperties commentProperties;
     private final ImageMicroServiceProperties imageProperties;
@@ -254,7 +255,7 @@ public class CardService {
 
             requestToLinkCardAndUser(cardModel,token);
             addCardIntoElastic(cardModel);
-
+            invalidatePaginationCaches();
             if (send){
                 sendMessage(new EmailDataDto(user.email(),cardDto));
             }
@@ -275,11 +276,12 @@ public class CardService {
         String token = authorization.substring(7);
         checkToken(token);
         String key = "card%d".formatted(id);
-        if (!redis.exists(key)) {//Если кеш отсутствует
+        Long redisResult = redisCommands.exists(key);
+        if (redisResult==null || redisResult<=0) {//Если кеш отсутствует
             return cacheCard(id,key,token);
         } else {//Если кеш найден
             try {
-                return objectMapper.readValue(redis.get(key), FullCardDtoForOutput.class);//Десериализуем строку в объект и возвращаем
+                return objectMapper.readValue(redisCommands.get(key), FullCardDtoForOutput.class);//Десериализуем строку в объект и возвращаем
             } catch (JsonProcessingException e) {
                 throw new SerializationException("an error occurred during serialization");
             }
@@ -320,8 +322,8 @@ public class CardService {
             throw new SerializationException("an error occurred during serialization");
         }
 
-        redis.set(key, objectAsString);//Кешируем объект
-        redis.expire(key, 60);//Устанавливаем время жизни
+        redisCommands.set(key, objectAsString);//Кешируем объект
+        redisCommands.expire(key, 60);//Устанавливаем время жизни
         return fullCardDtoForOutput;
     }
 
@@ -386,7 +388,7 @@ public class CardService {
         Long userId = user.id();
         List<String> userRoles = user.role();
 
-        if ( (!userId.equals(cardModel.getUserId())) && (userRoles.stream().noneMatch(role->role.equals("ROLE_ADMIN"))) ){
+        if ( (!userId.equals(cardModel.getUserId())) && (userRoles.stream().noneMatch(role->role.equals("ADMIN"))) ){
             throw new NotEnoughPermissionsException("You don't have permission to do this");
         }
     }
@@ -410,6 +412,17 @@ public class CardService {
         brokerProducer.saveInBroker(cardModel);
     }
 
+
+    private void invalidatePaginationCaches() {
+        String tag = "cards_pagination";
+        Set<String> keys = redisCommands.smembers(tag);
+
+        if (!keys.isEmpty()) {
+            redisCommands.del(keys.toArray(new String[0]));
+            redisCommands.del(tag);
+        }
+    }
+
     @Transactional
     public void deleteCard(Long cardId, String authorization) throws CardNotFoundException, TokenNotExistException, CommentNotDeletedException, ImageNotMovedException, UsernameNotFoundException, NotEnoughPermissionsException, CardNotSavedException {
         String token = authorization.substring(7);
@@ -424,12 +437,15 @@ public class CardService {
 
         complaintRepo.deleteAllByTargetIdAndComplaintType(cardId, ComplaintType.CARD);
 
-        List<Long> imagesId = cardModel.getImgIds();
+        UserDtoRequest user = requestToGetUserByToken(token);
+        String redisProfileKey = "user_"+user.name();
 
-        if (redis.exists(key)) {
-            redis.del(key);
+        Long redisCardCacheResult = redisCommands.exists(key);
+        if (redisCardCacheResult!=null && redisCardCacheResult>0){
+            redisCommands.del(key,redisProfileKey);
         }
 
+        List<Long> imagesId = cardModel.getImgIds();
         try {
             requestToUnlinkCardFromUser(token,cardId);
             moveImagesToTrashBucket(imagesId,token);
@@ -439,6 +455,7 @@ public class CardService {
 
             cardRepo.deleteById(cardId);
             delCardIntoElastic(cardModel);
+            invalidatePaginationCaches();
         } catch (ImageNotMovedException e) {
             rollBackCard(cardId,token);
             throw e;
@@ -481,8 +498,8 @@ public class CardService {
 
         try {
             String objectAsString = objectMapper.writeValueAsString(cardPageResponseDto);
-            redis.set(redisKey,objectAsString);
-            redis.expire(redisKey,60);
+            redisCommands.set(redisKey,objectAsString);
+            redisCommands.expire(redisKey,60);
         } catch (JsonProcessingException e) {
             throw new SerializationException("an error occurred during deserialization");
         }
@@ -496,15 +513,18 @@ public class CardService {
         checkToken(token);
 
         String key = "pageNumber:"+pageNumber+":limit:"+limit;
-        if (redis.exists(key)){
+        Long redisResult = redisCommands.exists(key);
+        if (redisResult!=null && redisResult>0){
             try {
-                return objectMapper.readValue(redis.get(key), CardPageResponseDto.class);
+                return objectMapper.readValue(redisCommands.get(key), CardPageResponseDto.class);
             } catch (JsonProcessingException e) {
                 throw new SerializationException("an error occurred during serialization");
             }
         }else {
             Page<CardModel> page = cardRepo.findAll(PageRequest.of(pageNumber,limit));
-            return cachingAndCreateDto(page,token,key);
+            CardPageResponseDto response = cachingAndCreateDto(page, token, key);
+            redisCommands.sadd("cards_pagination", key);  // Добавляем в тег ПОСЛЕ успешного кеширования
+            return response;
         }
 
     }
@@ -516,6 +536,7 @@ public class CardService {
 
     @Transactional
     public void patchCard(Long id, Optional<CardDto> cardDtoOptional, Optional<List<MultipartFile>> optFiles, String authorization) throws CardNotFoundException, CardNotSavedException, ImageNotSavedException, ImageLimitException, TokenNotExistException, UsernameNotFoundException, NotEnoughPermissionsException {
+        System.out.println("пришел запрос: "+cardDtoOptional);
         String token = authorization.substring(7);
         checkToken(token);
         CardModel cardModel = cardRepo.getCardModelById(id)
@@ -536,9 +557,12 @@ public class CardService {
                 throw new CardNotSavedException(e.getMessage());
             }
         }
-
-        if (cardChange && redis.exists(key)){
-            redis.del(key);
+        Long redisResult = redisCommands.exists(key);
+        if (cardChange && (redisResult!=null && redisResult>0)){
+            UserDtoRequest user = requestToGetUserByToken(token);
+            String redisProfileKey = "user_"+user.name();
+            redisCommands.del(key,redisProfileKey);
+            invalidatePaginationCaches();
         }
 
         if (optFiles.isPresent()) {
@@ -595,8 +619,9 @@ public class CardService {
 
         String key = "card%d".formatted(cardId);
 
-        if (redis.exists(key)){
-            redis.del(key);
+        Long redisResult = redisCommands.exists(key);
+        if (redisResult!=null && redisResult>0){
+            redisCommands.del(key);
         }
         
         cardRepo.save(card);

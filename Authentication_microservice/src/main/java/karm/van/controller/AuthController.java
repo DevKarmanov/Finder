@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.Authentication;
@@ -63,12 +64,37 @@ public class AuthController {
         }
     }
 
+
     @PostMapping(value = "/register")
     public ResponseEntity<?> register(@RequestBody UserDtoRequest userDtoRequest) {
         try {
             myUserService.registerUser(userDtoRequest);
             return ResponseEntity.ok("User registered successfully");
         } catch (UserAlreadyExist e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+
+    //todo описать в readme этот endpoint
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @PostMapping(value = "/admin/key/change")
+    public ResponseEntity<?> changeAdminKey() {
+        try {
+            return ResponseEntity.ok(Map.of("key",myUserService.changeAdminKey()));
+        } catch (Exception e) {
+            System.err.println(e.getClass()+": "+e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    //todo описать в readme этот endpoint
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @GetMapping(value = "/admin/key")
+    public ResponseEntity<?> getAdminKey() {
+        try {
+            return ResponseEntity.ok(myUserService.getAdminKey());
+        } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }

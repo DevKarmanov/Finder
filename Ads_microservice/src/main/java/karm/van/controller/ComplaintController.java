@@ -43,10 +43,13 @@ public class ComplaintController {
         try {
             return ResponseEntity.ok(complaintService.getComplaints(authorization,limit,page,complaintType));
         }catch (TokenNotExistException e){
+            System.out.println(e.getClass()+": "+e.getMessage());
           return ResponseEntity.badRequest().body(e.getMessage());
         }catch (SerializationException | JsonProcessingException | UsernameNotFoundException e){
+            System.out.println(e.getClass()+": "+e.getMessage());
             return ResponseEntity.status(HttpStatus.SC_INTERNAL_SERVER_ERROR).body(e.getMessage());
         }catch (NotEnoughPermissionsException e){
+            System.out.println(e.getClass()+": "+e.getMessage());
             return ResponseEntity.status(HttpStatus.SC_FORBIDDEN).body(e.getMessage());
         }
     }

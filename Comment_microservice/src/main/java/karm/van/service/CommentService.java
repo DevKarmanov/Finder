@@ -2,6 +2,7 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.AuthenticationMicroServiceProperties;
 import karm.van.dto.CommentAuthorDto;
 import karm.van.dto.CommentDto;
@@ -29,12 +30,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import redis.clients.jedis.Jedis;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -48,7 +48,7 @@ public class CommentService {
 
     @Value("${microservices.x-api-key}")
     private String apiKey;
-    private final Jedis redis;
+    private final RedisCommands<String,String> redisCommands;
 
     private void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,
@@ -189,14 +189,14 @@ public class CommentService {
                             authorDto,
                             comment.getReplyComments().size());
                     try {
-                        redis.rpush(keyForCache, objectMapper.writeValueAsString(commentDtoResponse));
+                        redisCommands.rpush(keyForCache, objectMapper.writeValueAsString(commentDtoResponse));
                         listOfComments.add(commentDtoResponse);
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException(new SerializationException("An error occurred during serialization"));
                     }
                 });
 
-        redis.expire(keyForCache, 60); // Устанавливаем время жизни равное минуте
+        redisCommands.expire(keyForCache, 60); // Устанавливаем время жизни равное минуте
 
         return listOfComments;
     }
@@ -221,7 +221,7 @@ public class CommentService {
     }
 
     private List<CommentDtoResponse> cacheComments(Page<CommentModel> comments,String commentsKeyForCache, String token, int limit) throws SerializationException {
-        List<String> cachedComments = redis.lrange(commentsKeyForCache, 0, limit - 1);// Проверяем есть ли закешированные результаты
+        List<String> cachedComments = redisCommands.lrange(commentsKeyForCache, 0, limit - 1);// Проверяем есть ли закешированные результаты
 
         if (cachedComments.isEmpty()){// Если кеша нет
             return getCachedComments(comments,token,commentsKeyForCache);
@@ -245,7 +245,7 @@ public class CommentService {
         try {
             List<CommentModel> comments = commentRepo.getCommentModelByCardId(cardId);
             invalidateCardCommentsCache(cardId);
-            comments.forEach(comment->invalidateReplyCommentsCache(comment.getId()));
+            comments.forEach(comment->invalidateReplyCommentsCacheForChainIterative(comment.getId()));
 
             if (!comments.isEmpty()){
                 comments.parallelStream().forEach(comment->{
@@ -293,7 +293,7 @@ public class CommentService {
 
             commentRepo.save(commentModel);
             invalidateCardCommentsCache(commentModel.getCardId());
-            invalidateReplyCommentsCache(commentId);
+            invalidateReplyCommentsCacheForChainIterative(commentId);
         } catch (InvalidDataException | CommentNotFoundException e){
             throw e;
         } catch (Exception e){
@@ -312,7 +312,7 @@ public class CommentService {
         requestToUnlinkCommentFromUser(token,commentId,commentModel.getUserId());
         commentRepo.deleteById(commentId);
         invalidateCardCommentsCache(commentModel.getCardId());
-        invalidateReplyCommentsCache(commentId);
+        invalidateReplyCommentsCacheForChainIterative(commentId);
     }
 
     @Transactional
@@ -343,7 +343,7 @@ public class CommentService {
 
         requestToLinkCommentAndUser(commentModel.getId(),token);
         invalidateCardCommentsCache(commentModel.getCardId());
-        invalidateReplyCommentsCache(commentId);
+        invalidateReplyCommentsCacheForChainIterative(commentId);
     }
 
     public List<CommentDtoResponse> getReplyComments(Long commentId, int limit, int page, String authorization) throws TokenNotExistException, SerializationException, CommentNotFoundException {
@@ -359,20 +359,28 @@ public class CommentService {
     }
 
     private void invalidateCardCommentsCache(Long cardId) {
-        // Удаляем все ключи, связанные с комментариями карточки
         String pattern = "comments:card:" + cardId + "*";
-        Set<String> keys = redis.keys(pattern);
+        List<String> keys = redisCommands.keys(pattern);
         if (!keys.isEmpty()) {
-            redis.del(keys.toArray(new String[0]));
+            redisCommands.del(keys.toArray(new String[0]));
+        }
+    }
+
+    private void invalidateReplyCommentsCacheForChainIterative(Long commentId) {
+        Long currentCommentId = commentId;
+        while (currentCommentId != null) {
+            invalidateReplyCommentsCache(currentCommentId);
+            Optional<Long> parentOpt = commentRepo.getParentCommentId(currentCommentId);
+            currentCommentId = parentOpt.orElse(null);
         }
     }
 
     private void invalidateReplyCommentsCache(Long commentId) {
-        // Удаляем все ключи, связанные с ответами на комментарий
         String pattern = "comments:reply:" + commentId + "*";
-        Set<String> keys = redis.keys(pattern);
+        List<String> keys = redisCommands.keys(pattern);
+        log.debug("Invalidating keys for pattern {}: {}", pattern, keys);
         if (!keys.isEmpty()) {
-            redis.del(keys.toArray(new String[0]));
+            redisCommands.del(keys.toArray(new String[0]));
         }
     }
 }

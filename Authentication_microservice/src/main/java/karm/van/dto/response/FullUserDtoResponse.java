@@ -12,6 +12,7 @@ public record FullUserDtoResponse(Long id,
                                   String country,
                                   String roleInCommand,
                                   String skills,
+                                  boolean isEnable,
                                   ProfileImageDtoResponse profileImage,
                                   List<UserCardResponse> userCards) {
 }

@@ -132,7 +132,7 @@ public class CommentController {
 
     @PatchMapping("/{commentId}/patch")
     public ResponseEntity<?> patchComment(@PathVariable Long commentId,
-                             @RequestPart("commentDto") CommentDto commentDto,
+                             @RequestBody CommentDto commentDto,
                              @RequestHeader("Authorization") String authorization) {
         try {
             commentService.patchComment(commentId, commentDto, authorization);

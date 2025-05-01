@@ -9,36 +9,49 @@ import org.springframework.data.elasticsearch.repository.ElasticsearchRepository
 public interface ElasticRepo extends ElasticsearchRepository<CardDocument, Long> {
     @Query("""
             {
-                "bool": {
-                    "should": [
-                        {
-                            "multi_match": {
-                                "query": "?0",
-                                "fields": ["title^4", "text^3"],
-                                "type": "best_fields",
-                                "operator": "or"
-                            }
-                        },
-                        {
-                            "match_phrase": {
-                                "title": {
-                                    "query": "?0",
-                                    "boost": 3
-                                }
-                            }
-                        },
-                        {
-                            "match_phrase": {
-                                "text": {
-                                    "query": "?0",
-                                    "boost": 2
-                                }
-                            }
-                        }
-                    ],
-                    "minimum_should_match": 1
-                }
-            }
+                 "bool": {
+                     "should": [
+                         {
+                             "multi_match": {
+                                 "query": "?0",
+                                 "fields": ["title^4", "text^3"],
+                                 "type": "best_fields",
+                                 "operator": "or",
+                                 "fuzziness": "AUTO",
+                                 "prefix_length": 2
+                             }
+                         },
+                         {
+                             "match_phrase": {
+                                 "title": {
+                                     "query": "?0",
+                                     "slop": 2,
+                                     "boost": 3
+                                 }
+                             }
+                         },
+                         {
+                             "match_phrase": {
+                                 "text": {
+                                     "query": "?0",
+                                     "slop": 2,
+                                     "boost": 2
+                                 }
+                             }
+                         },
+                         {
+                             "fuzzy": {
+                                 "title": {
+                                     "value": "?0",
+                                     "fuzziness": 1,
+                                     "boost": 1.5
+                                 }
+                             }
+                         }
+                     ],
+                     "minimum_should_match": 1
+                 }
+             }
             """)
     Page<CardDocument> findByQuery(String query, Pageable pageable);
 
@@ -54,25 +67,38 @@ public interface ElasticRepo extends ElasticsearchRepository<CardDocument, Long>
                                "text^3"                                   
                            ],                                   
                            "type": "best_fields",                                   
-                           "operator": "or"                               
+                           "operator": "or",
+                           "fuzziness": "AUTO",
+                            "prefix_length": 2                            
                        }                           
                    },                           
-                   {                               
-                       "match_phrase": {                                   
-                           "title": {                                       
-                               "query": "?0",                                       
-                               "boost": 3                                   
-                           }                               
-                       }                           
-                   },                           
-                   {                               
-                       "match_phrase": {                                   
-                           "text": {                                       
-                               "query": "?0",                                       
-                               "boost": 2                                   
-                           }                               
-                       }                           
-                   }                       
+                   {
+                             "match_phrase": {
+                                 "title": {
+                                     "query": "?0",
+                                     "slop": 2,
+                                     "boost": 3
+                                 }
+                             }
+                         },
+                         {
+                             "match_phrase": {
+                                 "text": {
+                                     "query": "?0",
+                                     "slop": 2,
+                                     "boost": 2
+                                 }
+                             }
+                         },
+                         {
+                             "fuzzy": {
+                                 "title": {
+                                     "value": "?0",
+                                     "fuzziness": 1,
+                                     "boost": 1.5
+                                 }
+                             }
+                         }                       
                ],                       
                "filter": [                           
                    {                               

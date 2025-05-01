@@ -2,6 +2,7 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.config.properties.ImageMicroServiceProperties;
 import karm.van.dto.card.CardPageResponseDto;
@@ -20,7 +21,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import redis.clients.jedis.Jedis;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -29,7 +29,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class ElasticService {
-    private final Jedis redis;
+    private final RedisCommands<String, String> redisCommands;
     private final ObjectMapper objectMapper;
     private final ElasticRepo elasticRepo;
     private final CardRepo cardRepo;
@@ -59,9 +59,10 @@ public class ElasticService {
         StringBuilder redisKey = new StringBuilder("pageNumber:" + pageNumber + ":limit:" + limit + ":" + query);
         createTime.map(timeFilter-> redisKey.append(":").append(timeFilter));
 
-        if (redis.exists(String.valueOf(redisKey))){
+        Long redisResult = redisCommands.exists(String.valueOf(redisKey));
+        if (redisResult!=null && redisResult>0){
             try {
-                return objectMapper.readValue(redis.get(String.valueOf(redisKey)), CardPageResponseDto.class);
+                return objectMapper.readValue(redisCommands.get(String.valueOf(redisKey)), CardPageResponseDto.class);
             } catch (JsonProcessingException e) {
                 throw new SerializationException("an error occurred during serialization");
             }
@@ -99,8 +100,8 @@ public class ElasticService {
             throw new SerializationException("an error occurred during deserialization");
         }
 
-        redis.set(key,objectAsString);
-        redis.expire(key,60);
+        redisCommands.set(key,objectAsString);
+        redisCommands.expire(key,60);
 
         return cardPageResponseDto;
     }

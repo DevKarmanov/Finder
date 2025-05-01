@@ -116,7 +116,7 @@ public class UserController {
         }
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     @PatchMapping("/block/{userName}")
     public ResponseEntity<?> blockUser(@PathVariable String userName,
                                        @RequestParam int year,
@@ -127,6 +127,7 @@ public class UserController {
                                        @RequestParam int seconds,
                                        @RequestParam String reason){
         try {
+
             myUserService.blockUser(userName,year,month,dayOfMonth,hours,minutes,seconds,reason);
             return ResponseEntity.ok("user successfully blocked");
         }catch (UsernameNotFoundException e){
@@ -134,7 +135,7 @@ public class UserController {
         }
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     @PatchMapping("/unblock/{userName}")
     public ResponseEntity<?> unblockUser(@PathVariable String userName){
         try {
@@ -145,7 +146,7 @@ public class UserController {
         }
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     @PatchMapping("/toggle/authorities/{userName}")
     public ResponseEntity<?> toggleUserAuthorities(@PathVariable String userName){
         try {

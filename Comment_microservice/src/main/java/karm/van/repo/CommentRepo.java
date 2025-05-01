@@ -4,6 +4,8 @@ import karm.van.model.CommentModel;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,9 +15,10 @@ public interface CommentRepo extends JpaRepository<CommentModel,Long> {
 
     Page<CommentModel> getCommentModelByCardIdAndParentCommentIsNull(Long id, Pageable pageable);
 
-    Page<CommentModel> getCommentModelsByParentComment_Id(Long parentCommentId, Pageable pageable);
+    @Query("SELECT c.parentComment.id FROM CommentModel c WHERE c.id = :commentId")
+    Optional<Long> getParentCommentId(@Param("commentId") Long commentId);
 
-    CommentModel findCommentModelById(Long id);
+    Page<CommentModel> getCommentModelsByParentComment_Id(Long parentCommentId, Pageable pageable);
 
     void deleteAllByCardId(Long id);
 

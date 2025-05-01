@@ -2,8 +2,7 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import karm.van.dto.complaint.ComplaintType;
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.dto.complaint.*;
 import karm.van.dto.user.UserDtoRequest;
@@ -22,8 +21,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPooled;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +34,7 @@ public class ComplaintService {
     private final ApiService apiService;
     private final AuthenticationMicroServiceProperties authProperties;
     private final CardRepo cardRepo;
-    private final Jedis redis;
+    private final RedisCommands<String,String> redisCommands;
     private final ObjectMapper objectMapper;
 
     @Value("${microservices.x-api-key}")
@@ -113,7 +110,7 @@ public class ComplaintService {
         complaint.setComplaintAuthorId(user.id());
 
         complaintRepo.save(complaint);
-
+        clearAllComplaintCache();
     }
 
     public ComplaintPageResponseDto getComplaints(String authorization, int limit, int page, String complaintType) throws TokenNotExistException, SerializationException, JsonProcessingException, UsernameNotFoundException, NotEnoughPermissionsException {
@@ -123,8 +120,9 @@ public class ComplaintService {
 
         String redisKey = "complaints:"+page+":"+limit+":"+complaintType;
 
-        if (redis.exists(redisKey)){
-            return objectMapper.readValue(redis.get(redisKey),ComplaintPageResponseDto.class);
+        Long redisResult = redisCommands.exists(redisKey);
+        if (redisResult!=null && redisResult>0){
+            return objectMapper.readValue(redisCommands.get(redisKey),ComplaintPageResponseDto.class);
         }else {
             Page<Complaint> complaints = switch (complaintType.trim().toLowerCase()) {
                 case ("user") -> complaintRepo.findAllByComplaintType(PageRequest.of(page, limit), ComplaintType.USER);
@@ -133,6 +131,13 @@ public class ComplaintService {
             };
 
             return cacheComplaints(redisKey,complaints,getComplaintsForCache(token,complaints));
+        }
+    }
+
+    private void clearAllComplaintCache() {
+        List<String> keys = redisCommands.keys("complaints:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisCommands.del(keys.toArray(new String[0]));
         }
     }
 
@@ -179,8 +184,8 @@ public class ComplaintService {
             throw new SerializationException("an error occurred during deserialization");
         }
 
-        redis.set(key,objectAsString);
-        redis.expire(key,60);
+        redisCommands.set(key,objectAsString);
+        redisCommands.expire(key,60);
 
         return complaintPageResponseDto;
     }
@@ -199,6 +204,7 @@ public class ComplaintService {
 
         complaintRepo.deleteAllByTargetIdAndComplaintType(userId,ComplaintType.USER);
         complaintRepo.deleteAllByComplaintAuthorId(userId);
+        clearAllComplaintCache();
 
     }
 
@@ -214,7 +220,7 @@ public class ComplaintService {
 
         List<String> userRoles = user.role();
 
-        if (userRoles.stream().noneMatch(role->role.equals("ROLE_ADMIN"))){
+        if (userRoles.stream().noneMatch(role->role.equals("ADMIN"))){
             throw new NotEnoughPermissionsException("You don't have permission to do this");
         }
     }
@@ -226,5 +232,7 @@ public class ComplaintService {
         checkUserPermissions(token);
 
         complaintRepo.deleteById(complaintId);
+        clearAllComplaintCache();
+
     }
 }

@@ -3,6 +3,7 @@ package karm.van.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.api.sync.RedisCommands;
 import jakarta.servlet.http.HttpServletRequest;
 import karm.van.config.AdsMicroServiceProperties;
 import karm.van.config.AuthMicroServiceProperties;
@@ -12,7 +13,9 @@ import karm.van.dto.request.UserDtoRequest;
 import karm.van.dto.request.UserPatchRequest;
 import karm.van.dto.response.*;
 import karm.van.exception.*;
+import karm.van.model.AdminKey;
 import karm.van.model.MyUser;
+import karm.van.repo.KeyRepo;
 import karm.van.repo.MyUserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
@@ -26,12 +29,12 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import redis.clients.jedis.Jedis;
 
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 
 @Service
@@ -39,7 +42,7 @@ import java.util.function.Function;
 @Log4j2
 public class MyUserService {
     private final MyUserRepo userRepo;
-    private final Jedis redis;
+    private final RedisCommands<String,String> redisCommands;
     private final ObjectMapper objectMapper;
     private final PasswordEncoder passwordEncoder;
     private final AdsMicroServiceProperties adsProperties;
@@ -49,6 +52,7 @@ public class MyUserService {
     private final JwtService jwtService;
     private final NotificationProducer notificationProducer;
     private final PasswordEncoder encoder;
+    private final KeyRepo keyRepo;
 
     @Value("${microservices.x-api-key}")
     private String apiKey;
@@ -123,10 +127,15 @@ public class MyUserService {
         }
     }
 
+    private boolean redisKeyExist(String key){
+        Long redisResult = redisCommands.exists(key);
+        return redisResult!=null && redisResult>0;
+    }
+
     public FullUserDtoResponse getFullUserData(HttpServletRequest request, String name) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
         String redisKey = "user_"+name;
-        if (redis.exists(redisKey)){
-            return objectMapper.readValue(redis.get(redisKey), FullUserDtoResponse.class);
+        if (redisKeyExist(redisKey)){
+            return objectMapper.readValue(redisCommands.get(redisKey), FullUserDtoResponse.class);
         }else {
             return cacheUserInfo(request,name,redisKey);
         }
@@ -161,13 +170,14 @@ public class MyUserService {
                     user.getCountry(),
                     user.getRoleInCommand(),
                     user.getSkills(),
+                    user.isEnable(),
                     imageDtoResponse,
                     cards
             );
 
             String objectAsString = objectMapper.writeValueAsString(fullUserDtoResponse);
-            redis.set(redisKey,objectAsString);
-            redis.expire(redisKey,60);
+            redisCommands.set(redisKey,objectAsString);
+            redisCommands.expire(redisKey,60);
             return fullUserDtoResponse;
         } catch (Exception e){
             log.error("class: "+e.getClass()+" message: "+e.getMessage());
@@ -186,8 +196,14 @@ public class MyUserService {
 
     @Transactional
     public void registerUser(UserDtoRequest userDtoRequest) throws UserAlreadyExist {
-        String name = userDtoRequest.name();
-        String email = userDtoRequest.email();
+        String adminKey = userDtoRequest.adminKey();
+        AdminKey key = keyRepo.getReferenceById(1);
+        List<String> userRoles = userDtoRequest.role();
+        if(adminKey!=null && key.getAdminKey().toString().equals(adminKey.trim())){
+            userRoles.add("ADMIN");
+        }
+        String name = userDtoRequest.name().trim();
+        String email = userDtoRequest.email().trim();
 
         if (userRepo.existsByName(name)){
             throw new UserAlreadyExist("A user with this login already exists");
@@ -199,14 +215,14 @@ public class MyUserService {
         MyUser user = MyUser.builder()
                 .name(name)
                 .email(email)
-                .country(userDtoRequest.country())
-                .description(userDtoRequest.description())
-                .roles(userDtoRequest.role())
-                .firstName(userDtoRequest.firstName())
-                .lastName(userDtoRequest.lastName())
+                .country(userDtoRequest.country().trim())
+                .description(userDtoRequest.description().trim())
+                .roles(userRoles)
+                .firstName(userDtoRequest.firstName().trim())
+                .lastName(userDtoRequest.lastName().trim())
                 .skills(userDtoRequest.skills())
-                .password(passwordEncoder.encode(userDtoRequest.password()))
-                .roleInCommand(userDtoRequest.roleInCommand())
+                .password(passwordEncoder.encode(userDtoRequest.password().trim()))
+                .roleInCommand(userDtoRequest.roleInCommand().trim())
                 .profileImage(0L)
                 .unlockAt(LocalDateTime.now())
                 .isEnable(true)
@@ -341,7 +357,7 @@ public class MyUserService {
                 deleteImageFromMinio(userProfileImageId,token);
             }
             userRepo.delete(user);
-            redis.del(redisKey);
+            redisCommands.del(redisKey);
         }catch (ImageNotMovedException | ImageNotDeletedException e){
             log.error("class: "+e.getClass()+" message: "+e.getMessage());
             throw e;
@@ -460,7 +476,7 @@ public class MyUserService {
         });
 
         userRepo.save(user);
-        redis.del(redisKey);
+        redisCommands.del(redisKey);
     }
 
     @Transactional
@@ -482,8 +498,8 @@ public class MyUserService {
             cards.add(cardId);
         }
 
-        if (redis.exists(redisKey)){
-            redis.del(redisKey);
+        if (redisKeyExist(redisKey)){
+            redisCommands.del(redisKey);
         }
 
         userRepo.save(user);
@@ -501,13 +517,13 @@ public class MyUserService {
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
         String redisKey = "favorite-cards:"+currentUserName;
 
-        if (redis.exists(redisKey)){
-            return objectMapper.readValue(redis.get(redisKey), new TypeReference<>(){});
+        if (redisKeyExist(redisKey)){
+            return objectMapper.readValue(redisCommands.get(redisKey), new TypeReference<>(){});
         }else {
             List<Long> favoriteCardsList = user.getFavoriteCards();
             String objectAsString = objectMapper.writeValueAsString(favoriteCardsList);
-            redis.set(redisKey,objectAsString);
-            redis.expire(redisKey,60);
+            redisCommands.set(redisKey,objectAsString);
+            redisCommands.expire(redisKey,60);
 
             return favoriteCardsList;
         }
@@ -526,6 +542,11 @@ public class MyUserService {
         MyUser user = userRepo.findByName(userName)
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
 
+        String redisKey = "user_"+userName;
+        if (redisKeyExist(redisKey)){
+            redisCommands.del(redisKey);
+        }
+
         user.setEnable(false);
         user.setUnlockAt(LocalDateTime.of(year,month,dayOfMonth,hours,minutes,seconds));
         user.setBlockReason(reason);
@@ -540,11 +561,16 @@ public class MyUserService {
             List<String> roles = user.getRoles();
             boolean roleRemove = false;
 
-            if (roles.contains("ROLE_ADMIN")){
-                roles.remove("ROLE_ADMIN");
+            String redisKey = "user_"+userName;
+            if (redisKeyExist(redisKey)){
+                redisCommands.del(redisKey);
+            }
+
+            if (roles.contains("ADMIN")){
+                roles.remove("ADMIN");
                 roleRemove = true;
             }else {
-                roles.add("ROLE_ADMIN");
+                roles.add("ADMIN");
             }
 
             userRepo.save(user);
@@ -560,6 +586,11 @@ public class MyUserService {
     public void unblockUser(String userName) {
         MyUser user = userRepo.findByName(userName)
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
+
+        String redisKey = "user_"+userName;
+        if (redisKeyExist(redisKey)){
+            redisCommands.del(redisKey);
+        }
 
         user.setEnable(true);
         user.setUnlockAt(LocalDateTime.now());
@@ -588,5 +619,38 @@ public class MyUserService {
             user.setPassword(encoder.encode(password));
         }
 
+    }
+
+    @Transactional
+    public UUID changeAdminKey() {
+        AdminKey key = keyRepo.getReferenceById(1);
+        String cacheKey = "adminKey:"+key;
+
+        Long cacheResult = redisCommands.exists(cacheKey);
+        if (cacheResult!=null && cacheResult>0){
+            redisCommands.del(cacheKey);
+        }
+
+        UUID newKey = UUID.randomUUID();
+        key.setAdminKey(newKey);
+        keyRepo.save(key);
+
+        redisCommands.set(cacheKey,newKey.toString());
+        redisCommands.expire(cacheKey,60);
+        return newKey;
+    }
+
+    public UUID getAdminKey() {
+        UUID adminKey = keyRepo.getReferenceById(1).getAdminKey();
+        String cacheKey = "adminKey:"+adminKey;
+
+        Long cacheResult = redisCommands.exists(cacheKey);
+        if (cacheResult!=null && cacheResult>0){
+            return UUID.fromString(redisCommands.get(cacheKey));
+        }else {
+            redisCommands.set(cacheKey,adminKey.toString());
+            redisCommands.expire(cacheKey,60);
+            return adminKey;
+        }
     }
 }
