@@ -671,7 +671,7 @@
 
 ---
 
-#### **13. GET** `/user/recovery/mail`
+#### **13. POST** `/user/recovery/mail`
 
 - **Description**: Генерирует и отправляет электронное письмо со ссылкой для смены вашего пароля.
 - **Request body**:
