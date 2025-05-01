@@ -672,7 +672,7 @@ Manages user authentication and authorization
 
 ---
 
-#### **13. GET** `/user/recovery/mail`
+#### **13. POST** `/user/recovery/mail`
 
 - **Description**: Generates and sends an email with a link to change your password.
 - **Request body**:
