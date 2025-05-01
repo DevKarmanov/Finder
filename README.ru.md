@@ -536,6 +536,7 @@
 	    "country": "Беларусь",
 	    "roleInCommand": "asd",
 	    "skills": "asd",
+      "isEnable": true,
 	    "profileImage": {
 	        "imageName": null,
 	        "bucketName": null
