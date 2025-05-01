@@ -48,9 +48,10 @@ public class CardController {
                                          @RequestParam(required = false,defaultValue = "5") int limit,
                                          @RequestParam String query,
                                          @RequestParam(required = false) Optional<LocalDate> createTime,
+                                         @RequestParam(required = false) Optional<List<String>> tags,
                                          @RequestHeader("Authorization") String authorization){
         try {
-            return ResponseEntity.ok(elasticService.search(query,pageNumber,limit,authorization,createTime));
+            return ResponseEntity.ok(elasticService.search(query,pageNumber,limit,authorization,createTime,tags));
         }catch (SerializationException e){
             return ResponseEntity.internalServerError().body(e.getMessage());
         }catch (TokenNotExistException e){
@@ -108,10 +109,10 @@ public class CardController {
     }
 
     @DeleteMapping("/del/{id}")
-    public void delCard(@PathVariable Long id, @RequestHeader("Authorization") String authorization) throws TokenNotExistException, CardNotDeletedException, CardNotFoundException, NotEnoughPermissionsException {
+    public void delCard(@PathVariable Long id, @RequestHeader("Authorization") String authorization) throws TokenNotExistException, CardNotFoundException, NotEnoughPermissionsException, CardNotDeletedException {
         try {
             cardService.deleteCard(id,authorization);
-        } catch (CommentNotDeletedException | ImageNotMovedException e) {
+        } catch (CommentNotDeletedException | ImageNotMovedException | CardNotDeletedException e) {
             throw new CardNotDeletedException("Due to an error, the ad was not deleted");
         } catch (TokenNotExistException | CardNotFoundException | NotEnoughPermissionsException e){
             throw e;

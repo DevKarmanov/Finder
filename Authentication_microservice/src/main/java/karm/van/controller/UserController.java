@@ -90,7 +90,7 @@ public class UserController {
         }
     }
 
-    @GetMapping("/recovery/mail")
+    @PostMapping("/recovery/mail")
     public ResponseEntity<?> recoveryMail(@RequestBody RecoveryRequest request){
         try {
             myUserService.getRecoveryMail(request);
@@ -198,6 +198,22 @@ public class UserController {
             }
             myUserService.unlinkCommentAndUser(commentId,authorId);
             return ResponseEntity.ok("Comment deleted successfully");
+        }catch (UsernameNotFoundException | InvalidApiKeyException e){
+            return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));
+        }catch (BadCredentialsException e){
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/card/favorite/unlink/{cardId}")
+    public ResponseEntity<?> unlinkFavoriteCardFromAllUsers(@PathVariable("cardId") Long cardId,
+                                               @RequestHeader("x-api-key") String apiKey){
+        try {
+            if(myUserService.checkApiKeyNotEquals(apiKey)){
+                throw new InvalidApiKeyException("Access denied");
+            }
+            myUserService.unlinkFavoriteCardFromAllUsers(cardId);
+            return ResponseEntity.ok("Cards deleted from favorite successfully");
         }catch (UsernameNotFoundException | InvalidApiKeyException e){
             return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));
         }catch (BadCredentialsException e){

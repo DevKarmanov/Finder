@@ -18,5 +18,6 @@ public class AuthenticationMicroServiceProperties {
     public static class Endpoints{
         private String validateToken;
         private String addProfileImage;
+        private String user;
     }
 }

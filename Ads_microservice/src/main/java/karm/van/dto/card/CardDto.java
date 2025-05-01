@@ -1,4 +1,6 @@
 package karm.van.dto.card;
 
-public record CardDto(Long id, String title, String text) {
+import java.util.List;
+
+public record CardDto(Long id, String title, String text, List<String> tags) {
 }

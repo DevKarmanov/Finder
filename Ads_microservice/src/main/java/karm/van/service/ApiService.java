@@ -182,6 +182,10 @@ public class ApiService {
         sendDeleteRequest(fullUrl,token,apiKey);
     }
 
+    public HttpStatusCode requestToUnlinkFavoriteCardAndUser(String url, String token, String apiKey){
+        return sendDeleteRequest(url,token,apiKey);
+    }
+
     public HttpStatusCode requestToDeleteOneImageFromDB(String url, String token, String apiKey) {
         return sendDeleteRequest(url,token,apiKey);
     }

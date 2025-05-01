@@ -14,6 +14,7 @@ import karm.van.dto.complaint.ComplaintType;
 import karm.van.dto.image.ImageDto;
 import karm.van.dto.message.EmailDataDto;
 import karm.van.dto.user.UserDtoRequest;
+import karm.van.exception.card.CardNotDeletedException;
 import karm.van.exception.card.CardNotFoundException;
 import karm.van.exception.card.CardNotSavedException;
 import karm.van.exception.card.CardNotUnlinkException;
@@ -210,6 +211,20 @@ public class CardService {
         ), imageIds, token, apiKey);
     }
 
+    private void requestToUnlinkFavoriteCardFromAllUsers(Long cardId, String token) throws CardNotDeletedException {
+        var url = apiService.buildUrl(
+                authenticationProperties.getPrefix(),
+                authenticationProperties.getHost(),
+                authenticationProperties.getPort(),
+                authenticationProperties.getEndpoints().getUnlinkFavoriteCardFromAllUsers(),cardId);
+        System.out.println("URI: "+url);
+        var status = apiService.requestToUnlinkFavoriteCardAndUser(url,token,apiKey);
+
+        if (status.isError()){
+            throw new CardNotDeletedException("An error occurred when deleting cards from favorites");
+        }
+    }
+
     @Async
     protected void requestToDeleteImagesFromMinioAsync(List<Long> imageIds,String token){
         requestToDeleteImagesFromMinio(imageIds,token);
@@ -221,6 +236,7 @@ public class CardService {
                 .id(cardModel.getId())
                 .title(cardModel.getTitle())
                 .text(cardModel.getText())
+                .tags(cardModel.getTags())
                 .createTime(cardModel.getCreateTime())
                 .build();
 
@@ -251,6 +267,7 @@ public class CardService {
 
             cardModel.setImgIds(imageIds);
             cardModel.setUserId(user.id());
+            cardModel.setTags(cardDto.tags());
             cardRepo.save(cardModel);
 
             requestToLinkCardAndUser(cardModel,token);
@@ -313,7 +330,7 @@ public class CardService {
 
         String userName = requestToGetUserById(token,card.getUserId()).name();
 
-        FullCardDtoForOutput fullCardDtoForOutput = new FullCardDtoForOutput(card.getId(),card.getTitle(),card.getText(),card.getCreateTime(),images,userName);
+        FullCardDtoForOutput fullCardDtoForOutput = new FullCardDtoForOutput(card.getId(),card.getTitle(),card.getText(),card.getCreateTime(),card.getTags(),images,userName);
 
         try {
             objectAsString = objectMapper.writeValueAsString(fullCardDtoForOutput);//Сериализуем объект в строку
@@ -422,9 +439,9 @@ public class CardService {
             redisCommands.del(tag);
         }
     }
-
+//todo доделать откат на моменте unlinkFavoriteCardFromAllUsers
     @Transactional
-    public void deleteCard(Long cardId, String authorization) throws CardNotFoundException, TokenNotExistException, CommentNotDeletedException, ImageNotMovedException, UsernameNotFoundException, NotEnoughPermissionsException, CardNotSavedException {
+    public void deleteCard(Long cardId, String authorization) throws CardNotFoundException, TokenNotExistException, CommentNotDeletedException, ImageNotMovedException, UsernameNotFoundException, NotEnoughPermissionsException, CardNotSavedException, CardNotDeletedException {
         String token = authorization.substring(7);
         checkToken(token);
 
@@ -437,19 +454,14 @@ public class CardService {
 
         complaintRepo.deleteAllByTargetIdAndComplaintType(cardId, ComplaintType.CARD);
 
-        UserDtoRequest user = requestToGetUserByToken(token);
-        String redisProfileKey = "user_"+user.name();
-
-        Long redisCardCacheResult = redisCommands.exists(key);
-        if (redisCardCacheResult!=null && redisCardCacheResult>0){
-            redisCommands.del(key,redisProfileKey);
-        }
+        redisCommands.del(key);
 
         List<Long> imagesId = cardModel.getImgIds();
         try {
             requestToUnlinkCardFromUser(token,cardId);
             moveImagesToTrashBucket(imagesId,token);
             sendRequestToDellAllComments(cardId,token);
+            requestToUnlinkFavoriteCardFromAllUsers(cardId,token);
 
             requestToDeleteImagesFromMinio(imagesId,token);
 
@@ -462,6 +474,7 @@ public class CardService {
         } catch (CommentNotDeletedException e){
             rollBackImages(imagesId,token);
             rollBackCard(cardId,token);
+            //todo rollBackComments
             throw e;
         } catch (Exception e) {
             log.error("An unknown error occurred while deleting the card: "+e.getMessage()+" - "+e.getClass());
@@ -479,6 +492,7 @@ public class CardService {
                                 card.getTitle(),
                                 card.getText(),
                                 card.getCreateTime(),
+                                card.getTags(),
                                 requestToGetAllCardImages(card,token),
                                 requestToGetUserById(token,card.getUserId()).name());
                     } catch (UsernameNotFoundException e) {
@@ -551,6 +565,7 @@ public class CardService {
             try {
                 CardDto cardDto = cardDtoOptional.get();
                 addCardText(cardDto, cardModel);
+                cardModel.setTags(cardDto.tags());
                 patchCardTextIntoElastic(id,cardDto);
                 cardChange = true;
             } catch (CardNotSavedException e) {
@@ -639,7 +654,7 @@ public class CardService {
 
         return cardRepo.findAllByUserId(userId)
                 .parallelStream()
-                .map(card->new CardDto(card.getId(), card.getTitle(),card.getText()))
+                .map(card->new CardDto(card.getId(), card.getTitle(),card.getText(),card.getTags()))
                 .toList();
 
     }

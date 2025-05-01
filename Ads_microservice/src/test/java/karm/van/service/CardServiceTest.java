@@ -17,7 +17,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
@@ -49,7 +48,7 @@ public class CardServiceTest {
 
     @Test
     void checkInvalidText() {
-        assertThrows(CardNotSavedException.class,()->cardService.validateText("",""));
+        assertThrows(CardNotSavedException.class,()->cardService.validateText("","",""));
     }
 
     @Test
@@ -108,7 +107,7 @@ public class CardServiceTest {
 
         doNothing().when(cardServiceSpy).checkToken("token");
 
-        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto(1L,"title","text"),"Bearer token"));
+        assertThrows(ImageLimitException.class,()->cardServiceSpy.addCard(files,new CardDto(1L,"title","text","tags"),"Bearer token"));
 
     }
 }

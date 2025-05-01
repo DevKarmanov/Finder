@@ -134,6 +134,7 @@ public class MyUserService {
 
     public FullUserDtoResponse getFullUserData(HttpServletRequest request, String name) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
         String redisKey = "user_"+name;
+        System.out.println("FULL DATA REDIS KEY: "+redisKey);
         if (redisKeyExist(redisKey)){
             return objectMapper.readValue(redisCommands.get(redisKey), FullUserDtoResponse.class);
         }else {
@@ -418,6 +419,7 @@ public class MyUserService {
 
         String redisKey = "user_"+authentication.getName();
 
+        System.out.println("PATCH REDIS KEY: "+redisKey);
 
         userPatchRequest.name().ifPresent(name -> {
             if (name.trim().isEmpty()) {
@@ -652,5 +654,17 @@ public class MyUserService {
             redisCommands.expire(cacheKey,60);
             return adminKey;
         }
+    }
+
+    @Transactional
+    public void unlinkFavoriteCardFromAllUsers(Long cardId) {
+        List<MyUser> usersWithCard = userRepo.findAllByFavoriteCardsContaining(cardId);
+
+        for (MyUser user : usersWithCard) {
+            user.getFavoriteCards().remove(cardId);
+            redisCommands.del("favorite-cards:"+user.getName());
+        }
+
+        userRepo.saveAll(usersWithCard);
     }
 }

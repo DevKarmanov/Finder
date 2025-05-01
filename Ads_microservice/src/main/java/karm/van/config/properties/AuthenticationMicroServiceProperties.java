@@ -20,6 +20,6 @@ public class AuthenticationMicroServiceProperties {
         private String user;
         private String addCardToUser;
         private String unlinkCardFromUser;
-
+        private String unlinkFavoriteCardFromAllUsers;
     }
 }

@@ -1,8 +1,10 @@
 package karm.van.service;
 
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.AuthenticationMicroServiceProperties;
 import karm.van.dto.ImageDto;
 import karm.van.dto.ImageDtoResponse;
+import karm.van.dto.UserDtoRequest;
 import karm.van.exception.*;
 import karm.van.model.ImageModel;
 import karm.van.repository.ImageRepo;
@@ -22,6 +24,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ImageService {
+    private final RedisCommands<String,String> redisCommands;
     private final MinioService minioService;
     private final ImageRepo imageRepo;
     private final AuthenticationMicroServiceProperties authProperties;
@@ -223,8 +226,23 @@ public class ImageService {
         }
     }
 
+    private UserDtoRequest requestToGetUserByToken(String token) throws UsernameNotFoundException {
+        UserDtoRequest user = apiService.getUserByToken(apiService.buildUrl(
+                authProperties.getPrefix(),
+                authProperties.getHost(),
+                authProperties.getPort(),
+                authProperties.getEndpoints().getUser()
+        ), token,apiKey);
+
+        if (user == null) {
+            throw new UsernameNotFoundException("User not found");
+        }
+
+        return user;
+    }
+
     @Transactional
-    public void addProfileImage(MultipartFile profileImage, String authorization, String minioProfileImageBucket) throws TokenNotExistException, ImageNotSavedException, ImageNotDeletedException {
+    public void addProfileImage(MultipartFile profileImage, String authorization, String minioProfileImageBucket) throws TokenNotExistException, ImageNotSavedException, ImageNotDeletedException, UsernameNotFoundException {
         String token = authorization.substring(7);
         checkToken(token);
         String fileName = UUID.randomUUID()+"-"+profileImage.getOriginalFilename();
@@ -235,6 +253,13 @@ public class ImageService {
                 .build();
 
         imageRepo.save(imageModel);
+
+        UserDtoRequest user = requestToGetUserByToken(token);
+
+        String redisKey = "user_"+user.name();
+
+        System.out.println("PHOTO REDIS KEY: "+redisKey);
+        redisCommands.del(redisKey);
 
         try {
             saveImage(profileImage,fileName,minioProfileImageBucket);

@@ -8,6 +8,7 @@ import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Getter
 @Setter
@@ -26,6 +27,9 @@ public class CardDocument {
 
     @Field(type = FieldType.Text, analyzer = "custom_russian_english")
     private String text;
+
+    @Field(type = FieldType.Keyword, normalizer = "lowercase_normalizer")
+    private List<String> tags;
 
     @Field(type = FieldType.Date)
     private LocalDate createTime;

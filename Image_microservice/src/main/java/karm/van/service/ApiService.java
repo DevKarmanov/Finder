@@ -1,6 +1,7 @@
 package karm.van.service;
 
 import jakarta.annotation.PostConstruct;
+import karm.van.dto.UserDtoRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
@@ -34,19 +35,24 @@ public class ApiService {
         return uriBuilder.toUriString();
     }
 
-    private <T> T sendGetResponse(String uri, String token, Class<T> responseType){
+    private <T> T sendGetResponse(String uri, String token, Class<T> responseType, String apiKey) {
         try {
             return webClient
                     .get()
                     .uri(uri)
-                    .headers(httpHeaders -> httpHeaders.setBearerAuth(token))
+                    .headers(httpHeaders -> {
+                        httpHeaders.setBearerAuth(token);
+                        if (apiKey != null && !apiKey.trim().isEmpty()) {
+                            httpHeaders.set("x-api-key", apiKey);
+                        }
+                    })
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, clientResponse -> {
                         throw new RuntimeException();
                     })
                     .bodyToMono(responseType)
                     .block();
-        }catch (Exception e){
+        } catch (Exception e) {
             return null;
         }
     }
@@ -72,12 +78,20 @@ public class ApiService {
     }
 
     public Boolean validateToken(String token, String url) {
-        Map<?, ?> responseMap = sendGetResponse(url, token, Map.class);
+        Map<?, ?> responseMap = sendGetResponse(url, token, Map.class,null);
         return responseMap != null && responseMap.containsKey("valid") && (Boolean) responseMap.get("valid");
     }
 
 
     public Long requestToLinkImageAndUser(String uri, String token, String apiKey) {
         return sendPatchRequest(uri,token,apiKey, Long.class);
+    }
+
+    public UserDtoRequest getUserByToken(String url, String token, String apiKey) {
+        return fetchUserData(url, token, apiKey);
+    }
+
+    private UserDtoRequest fetchUserData(String uri, String token, String apiKey) {
+        return sendGetResponse(uri,token, UserDtoRequest.class,apiKey);
     }
 }

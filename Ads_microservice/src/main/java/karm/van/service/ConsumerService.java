@@ -14,6 +14,8 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -58,6 +60,7 @@ public class ConsumerService {
 
             String title = cardDto.title();
             String text = cardDto.text();
+            List<String> tags = cardDto.tags();
 
             elasticRepo.findById(elasticPatchDto.id())
                     .ifPresent(cardDocument -> {
@@ -67,6 +70,7 @@ public class ConsumerService {
                         if (text.trim().isEmpty()){
                             cardDocument.setText(text);
                         }
+                        cardDocument.setTags(tags);
 
                         elasticRepo.save(cardDocument);
                     });
