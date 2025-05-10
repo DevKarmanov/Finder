@@ -1,7 +1,7 @@
 package karm.van.config;
 
 import karm.van.model.AdminKey;
-import karm.van.repo.KeyRepo;
+import karm.van.repo.jpaRepo.KeyRepo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;

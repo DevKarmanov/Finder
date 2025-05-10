@@ -3,7 +3,7 @@ package karm.van.service;
 import karm.van.dto.request.AuthRequest;
 import karm.van.dto.response.AuthResponse;
 import karm.van.model.MyUser;
-import karm.van.repo.MyUserRepo;
+import karm.van.repo.jpaRepo.MyUserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;

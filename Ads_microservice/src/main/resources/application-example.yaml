@@ -4,26 +4,26 @@ rabbitmq:
       name: email-queue
     elastic:
       save:
-        name: elastic-queue-save
+        name: elasticRepo-queue-save
       del:
-        name: elastic-queue-del
+        name: elasticRepo-queue-del
       patch:
-        name: elastic-queue-patch
+        name: elasticRepo-queue-patch
   exchange:
     message:
       name: finder-exchange
     elastic:
-      name: elastic-exchange
+      name: elasticRepo-exchange
   routing-key:
     email:
       name: email-routing-key
     elastic:
       save:
-        name: elastic-routing-key-save
+        name: elasticRepo-routing-key-save
       del:
-        name: elastic-routing-key-del
+        name: elasticRepo-routing-key-del
       patch:
-        name: elastic-routing-key-patch
+        name: elasticRepo-routing-key-patch
 
 spring:
   rabbitmq:

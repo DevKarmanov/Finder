@@ -1,4 +1,4 @@
-package karm.van.repo;
+package karm.van.repo.jpaRepo;
 
 import karm.van.model.AdminKey;
 import org.springframework.data.jpa.repository.JpaRepository;

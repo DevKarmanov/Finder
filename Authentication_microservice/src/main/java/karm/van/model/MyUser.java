@@ -67,6 +67,16 @@ public class MyUser implements Serializable {
     @Column(name = "card_id")
     private List<Long> favoriteCards;
 
+    @ElementCollection
+    @CollectionTable(name = "user_followers", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "follower_id")
+    private List<Long> followers;
+
+    @ElementCollection
+    @CollectionTable(name = "user_following", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "following_id")
+    private List<Long> following;
+
     private Long profileImage;
 
     private boolean isEnable;

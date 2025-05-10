@@ -5,21 +5,30 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.api.sync.RedisCommands;
 import jakarta.servlet.http.HttpServletRequest;
-import karm.van.config.AdsMicroServiceProperties;
-import karm.van.config.AuthMicroServiceProperties;
-import karm.van.config.ImageMicroServiceProperties;
+import karm.van.config.properties.AdsMicroServiceProperties;
+import karm.van.config.properties.AuthMicroServiceProperties;
+import karm.van.config.properties.CommentMicroServiceProperties;
+import karm.van.config.properties.ImageMicroServiceProperties;
+import karm.van.dto.elastic.UserRequest;
 import karm.van.dto.request.RecoveryRequest;
 import karm.van.dto.request.UserDtoRequest;
 import karm.van.dto.request.UserPatchRequest;
 import karm.van.dto.response.*;
+import karm.van.dto.rollBack.RollBackCommand;
 import karm.van.exception.*;
 import karm.van.model.AdminKey;
 import karm.van.model.MyUser;
-import karm.van.repo.KeyRepo;
-import karm.van.repo.MyUserRepo;
+import karm.van.model.MyUserDocument;
+import karm.van.repo.elasticRepo.ElasticRepo;
+import karm.van.repo.jpaRepo.KeyRepo;
+import karm.van.repo.jpaRepo.MyUserRepo;
+import karm.van.service.utils.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
@@ -32,10 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -47,12 +55,14 @@ public class MyUserService {
     private final PasswordEncoder passwordEncoder;
     private final AdsMicroServiceProperties adsProperties;
     private final ImageMicroServiceProperties imageProperties;
+    private final CommentMicroServiceProperties commentProperties;
     private final AuthMicroServiceProperties authMicroServiceProperties;
     private final ApiService apiService;
     private final JwtService jwtService;
-    private final NotificationProducer notificationProducer;
+    private final NotificationProducer producer;
     private final PasswordEncoder encoder;
     private final KeyRepo keyRepo;
+    private final ElasticRepo elasticRepo;
 
     @Value("${microservices.x-api-key}")
     private String apiKey;
@@ -132,19 +142,20 @@ public class MyUserService {
         return redisResult!=null && redisResult>0;
     }
 
-    public FullUserDtoResponse getFullUserData(HttpServletRequest request, String name) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
-        String redisKey = "user_"+name;
+    public FullUserDtoResponse getFullUserData(Authentication authentication,HttpServletRequest request, String name) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
+        MyUser user = userRepo.findByName(name)
+                .orElseThrow(()->new UsernameNotFoundException("User with this name doesn't exist"));
+
+        String redisKey = "user_"+user.getId();
         System.out.println("FULL DATA REDIS KEY: "+redisKey);
         if (redisKeyExist(redisKey)){
             return objectMapper.readValue(redisCommands.get(redisKey), FullUserDtoResponse.class);
         }else {
-            return cacheUserInfo(request,name,redisKey);
+            return cacheUserInfo(authentication,request,user,redisKey);
         }
     }
 
-    private FullUserDtoResponse cacheUserInfo(HttpServletRequest request, String name, String redisKey) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
-        MyUser user = userRepo.findByName(name)
-                .orElseThrow(()->new UsernameNotFoundException("User with this name doesn't exist"));
+    private FullUserDtoResponse cacheUserInfo(Authentication authentication,HttpServletRequest request, MyUser user, String redisKey) throws CardsNotGetedException, ImageNotGetedException, JsonProcessingException {
 
         String token = (String) request.getAttribute("jwtToken");
 
@@ -171,6 +182,9 @@ public class MyUserService {
                     user.getCountry(),
                     user.getRoleInCommand(),
                     user.getSkills(),
+                    user.getFollowers().size(),
+                    user.getFollowing().size(),
+                    userRepo.getByName(authentication.getName()).getFollowing().contains(user.getId()),
                     user.isEnable(),
                     imageDtoResponse,
                     cards
@@ -187,8 +201,8 @@ public class MyUserService {
     }
 
     @Transactional
-    public void addCardToUser(Authentication authentication,Long cardId) throws UsernameNotFoundException, BadCredentialsException{
-        MyUser user = userRepo.findByName(authentication.getName())
+    public void addCardToUser(Long userId,Long cardId) throws UsernameNotFoundException, BadCredentialsException{
+        MyUser user = userRepo.findById(userId)
                 .orElseThrow(()->new UsernameNotFoundException("User with this name doesn't exist"));
         List<Long> cardsList = user.getCards();
         cardsList.add(cardId);
@@ -213,17 +227,23 @@ public class MyUserService {
             throw new UserAlreadyExist("A user with this email already exists");
         }
 
+        String country = userDtoRequest.country().trim();
+        String description = userDtoRequest.description().trim();
+        String firstname = userDtoRequest.firstName().trim();
+        String lastname = userDtoRequest.lastName().trim();
+        String roleInCommand = userDtoRequest.roleInCommand().trim();
+
         MyUser user = MyUser.builder()
                 .name(name)
                 .email(email)
-                .country(userDtoRequest.country().trim())
-                .description(userDtoRequest.description().trim())
+                .country(country)
+                .description(description)
                 .roles(userRoles)
-                .firstName(userDtoRequest.firstName().trim())
-                .lastName(userDtoRequest.lastName().trim())
+                .firstName(firstname)
+                .lastName(lastname)
                 .skills(userDtoRequest.skills())
                 .password(passwordEncoder.encode(userDtoRequest.password().trim()))
-                .roleInCommand(userDtoRequest.roleInCommand().trim())
+                .roleInCommand(roleInCommand)
                 .profileImage(0L)
                 .unlockAt(LocalDateTime.now())
                 .isEnable(true)
@@ -231,6 +251,13 @@ public class MyUserService {
 
         userRepo.save(user);
 
+        saveInelastic(user.getId(),name,country,description,firstname,lastname,userDtoRequest.skills(),roleInCommand);
+    }
+
+    @Async
+    protected void saveInelastic(Long id,String name,String country,String description,String firstname,String lastname,String skills,String roleInCommand){
+        MyUserDocument userDocument = new MyUserDocument(id,name,country,description,firstname,lastname,skills,roleInCommand);
+        producer.saveInElastic(userDocument);
     }
 
     private void sendRequestToDelUserCard(String token, Long cardId) throws UserNotDeletedException {
@@ -252,7 +279,7 @@ public class MyUserService {
         }
     }
 
-    private void moveProfileImageToTrashBucket(Long imageId, String token) throws ImageNotMovedException {
+    private void moveProfileImageToTrashBucket(Long imageId) throws ImageNotMovedException {
         String imageUrl = apiService.buildUrl(
                 imageProperties.getPrefix(),
                 imageProperties.getHost(),
@@ -261,7 +288,7 @@ public class MyUserService {
                 imageId
         );
         try {
-            HttpStatusCode httpStatusCode = apiService.moveProfileImage(imageUrl, token, apiKey,true);
+            HttpStatusCode httpStatusCode = apiService.moveProfileImage(imageUrl, apiKey,true);
             if (httpStatusCode != HttpStatus.OK) {
                 throw new ImageNotMovedException();
             }
@@ -270,6 +297,46 @@ public class MyUserService {
             throw new ImageNotMovedException("An error occurred on the server side during the image moving");
         }
     }
+
+    private List<CommentDto> requestToDeleteAllUserComments(Long userId, String token) throws CommentNotDeletedException {
+        String commentUri = apiService.buildUrl(
+                commentProperties.getPrefix(),
+                commentProperties.getHost(),
+                commentProperties.getPort(),
+                commentProperties.getEndpoints().getDeleteCommentsByUser(),
+                userId
+        );
+        try {
+            return apiService.requestToDeleteAllUserComments(commentUri, token, apiKey);
+        }catch (Exception e){
+            log.error("class: "+e.getClass()+" message: "+e.getMessage());
+            throw new CommentNotDeletedException("An error occurred while deleting user comments");
+        }
+    }
+
+    @Async
+    protected void rollBackComments(List<CommentDto> commentDtos) {
+//        String url = apiService.buildUrl(
+//                commentProperties.getPrefix(),
+//                commentProperties.getHost(),
+//                commentProperties.getPort(),
+//                commentProperties.getEndpoints().getAddComments());
+//
+//        apiService.requestToRollBackDeletedComments(url,apiKey,commentDtos);
+
+        try {
+            String deletedCommentsJson = objectMapper.writeValueAsString(commentDtos);
+            RollBackCommand rollBackCommand = RollBackCommand.builder()
+                    .rollbackType("RestoreDeletedComments")
+                    .params(Map.of("listOfComments",deletedCommentsJson))
+                    .build();
+
+            producer.sendRollBack(rollBackCommand);
+        }catch (Exception e){
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
 
     private void deleteImageFromMinio(Long imageId,String token) throws ImageNotDeletedException {
         String url = apiService.buildUrl(
@@ -292,17 +359,25 @@ public class MyUserService {
     }
 
     @Async
-    protected void rollBackImages(Long imageId, String token){
-        String imageUrl = apiService.buildUrl(
-                imageProperties.getPrefix(),
-                imageProperties.getHost(),
-                imageProperties.getPort(),
-                imageProperties.getEndpoints().getMoveProfileImage(),
-                imageId
-                );
+    protected void rollBackImages(Long imageId){
+//        String imageUrl = apiService.buildUrl(
+//                imageProperties.getPrefix(),
+//                imageProperties.getHost(),
+//                imageProperties.getPort(),
+//                imageProperties.getEndpoints().getMoveProfileImage(),
+//                imageId
+//                );
+//
+//
+//        apiService.moveProfileImage(imageUrl, apiKey,false);
+        if (imageId>0){
+            RollBackCommand rollBackCommand = RollBackCommand.builder()
+                    .rollbackType("RestoreProfileImage")
+                    .params(Map.of("imageId",imageId))
+                    .build();
+            producer.sendRollBack(rollBackCommand);
+        }
 
-
-        apiService.moveProfileImage(imageUrl, token, apiKey,false);
     }
 
     private void deleteAllUserCards(MyUser user, String token) throws CardNotDeletedException {
@@ -340,32 +415,83 @@ public class MyUserService {
     }
 
     @Transactional
-    public void delUser(Authentication authentication, HttpServletRequest request) throws ImageNotMovedException, CardNotDeletedException, ImageNotDeletedException, ComplaintsNotDeletedException {
+    public void delUser(Authentication authentication, HttpServletRequest request) throws ImageNotMovedException, CommentNotDeletedException, ComplaintsNotDeletedException {
         String token = (String) request.getAttribute("jwtToken");
-        String redisKey = "user_"+authentication.getName();
         MyUser user = userRepo.findByName(authentication.getName())
                 .orElseThrow(()->new UsernameNotFoundException("User with this name doesn't exist"));
+
+        String redisKey = "user_"+user.getId();
+
+        Long userId = user.getId();
+
+        List<CommentDto> comments = new ArrayList<>();
         try {
             Long userProfileImageId = user.getProfileImage();
             if (userProfileImageId>0){
-                moveProfileImageToTrashBucket(userProfileImageId,token);
+                moveProfileImageToTrashBucket(userProfileImageId);
             }
-            deleteAllComplaintByUserId(user.getId(),token);
+            comments.addAll(requestToDeleteAllUserComments(userId,token));
+            deleteAllComplaintByUserId(userId,token);
             if (!user.getCards().isEmpty()){
                 deleteAllUserCards(user,token);
             }
             if (userProfileImageId>0){
                 deleteImageFromMinio(userProfileImageId,token);
             }
-            userRepo.delete(user);
+
+            deleteRedisKeysByPatterns(user.getId(),user.getFollowing(),user.getFollowers());
+            userRepo.delete(unsubscribeUser(user));
+            delUserInElastic(user);
             redisCommands.del(redisKey);
-        }catch (ImageNotMovedException | ImageNotDeletedException e){
-            log.error("class: "+e.getClass()+" message: "+e.getMessage());
+        }catch (ImageNotMovedException e){
+            log.error("Error moving the image");
             throw e;
-        }catch (CardNotDeletedException |ComplaintsNotDeletedException e){
-            rollBackImages(user.getProfileImage(),token);
+        }catch (CommentNotDeletedException e){
+            log.error("Error deleting comments");
+            rollBackImages(user.getProfileImage());
             throw e;
+        }catch (ComplaintsNotDeletedException e){
+            log.error("Error deleting complaints");
+            rollBackImages(user.getProfileImage());
+            rollBackComments(comments);
+            throw e;
+        }catch (CardNotDeletedException e){
+            log.error("Error deleting ads");
+            rollBackImages(user.getProfileImage());
+            rollBackComments(comments);
+            //todo rollBackComplaints();
+        }catch (ImageNotDeletedException e){
+            log.error("Error deleting images");
+            rollBackImages(user.getProfileImage());
+            rollBackComments(comments);
+            //todo rollBackComplaints();
+            //todo rollBackCards();
         }
+    }
+
+    private MyUser unsubscribeUser(MyUser user){
+        Long userId = user.getId();
+        for (Long followingId : user.getFollowing()) {
+            MyUser followingUser = userRepo.findById(followingId).orElseThrow(() -> new RuntimeException("Following user not found"));
+            followingUser.getFollowers().remove(userId);
+            userRepo.save(followingUser);
+        }
+
+        for (Long followerId : user.getFollowers()) {
+            MyUser followerUser = userRepo.findById(followerId).orElseThrow(() -> new RuntimeException("Follower user not found"));
+            followerUser.getFollowing().remove(userId);
+            userRepo.save(followerUser);
+        }
+
+        user.setFollowers(new ArrayList<>());
+        user.setFollowing(new ArrayList<>());
+
+        return user;
+    }
+
+    @Async
+    protected void delUserInElastic(MyUser user){
+        producer.delInElastic(user);
     }
 
     @Transactional
@@ -417,7 +543,7 @@ public class MyUserService {
         MyUser user = userRepo.findByName(authentication.getName())
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
 
-        String redisKey = "user_"+authentication.getName();
+        String redisKey = "user_"+user.getId();
 
         System.out.println("PATCH REDIS KEY: "+redisKey);
 
@@ -479,6 +605,22 @@ public class MyUserService {
 
         userRepo.save(user);
         redisCommands.del(redisKey);
+        patchInElastic(user.getId(),userPatchRequest);
+    }
+
+    @Async
+    protected void patchInElastic(Long id,UserPatchRequest userPatchRequest){
+        UserRequest userRequest = new UserRequest(
+                id,
+                userPatchRequest.name(),
+                userPatchRequest.firstName(),
+                userPatchRequest.lastName(),
+                userPatchRequest.description(),
+                userPatchRequest.country(),
+                userPatchRequest.roleInCommand(),
+                userPatchRequest.skills());
+        System.out.println("ОТПРАВЛЕНО на PATCH");
+        producer.patchInElastic(userRequest);
     }
 
     @Transactional
@@ -544,7 +686,7 @@ public class MyUserService {
         MyUser user = userRepo.findByName(userName)
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
 
-        String redisKey = "user_"+userName;
+        String redisKey = "user_"+user.getId();
         if (redisKeyExist(redisKey)){
             redisCommands.del(redisKey);
         }
@@ -563,7 +705,7 @@ public class MyUserService {
             List<String> roles = user.getRoles();
             boolean roleRemove = false;
 
-            String redisKey = "user_"+userName;
+            String redisKey = "user_"+user.getId();
             if (redisKeyExist(redisKey)){
                 redisCommands.del(redisKey);
             }
@@ -589,7 +731,7 @@ public class MyUserService {
         MyUser user = userRepo.findByName(userName)
                 .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
 
-        String redisKey = "user_"+userName;
+        String redisKey = "user_"+user.getId();
         if (redisKeyExist(redisKey)){
             redisCommands.del(redisKey);
         }
@@ -606,7 +748,7 @@ public class MyUserService {
                 serverPort,
                 authMicroServiceProperties.getEndpoints().getRecoveryPassword(),
                 jwtService.generateRecoveryToken(request.email(),request.password()));
-        notificationProducer.sendRecoveryMessage(new RecoveryMessageDto(request.email(), url));
+        producer.sendRecoveryMessage(new RecoveryMessageDto(request.email(), url));
     }
 
     @Transactional
@@ -667,4 +809,266 @@ public class MyUserService {
 
         userRepo.saveAll(usersWithCard);
     }
+
+
+    public UserPageResponse searchUser(Optional<String> usernameOpt, Optional<String> countryOpt, Optional<String> descriptionOpt, Optional<String> firstnameOpt, Optional<String> lastnameOpt, Optional<String> skillsOpt, Optional<String> roleInCommandOpt, int pageNumber, int limit) throws SerializationException {
+
+        StringBuilder redisKey = new StringBuilder("page:" + pageNumber + ":limit:" + limit);
+
+        usernameOpt.ifPresent(username -> redisKey.append(":username:").append(username));
+        countryOpt.ifPresent(country -> redisKey.append(":country:").append(country));
+        descriptionOpt.ifPresent(description -> redisKey.append(":description:").append(description));
+        firstnameOpt.ifPresent(firstname -> redisKey.append(":firstname:").append(firstname));
+        lastnameOpt.ifPresent(lastname -> redisKey.append(":lastname:").append(lastname));
+        skillsOpt.ifPresent(skills -> redisKey.append(":skills:").append(skills));
+        roleInCommandOpt.ifPresent(role -> redisKey.append(":roleInCommand:").append(role));
+
+        String redisFinalKey = redisKey.toString();
+
+        Long redisResult = redisCommands.exists(redisFinalKey);
+        if (redisResult != null && redisResult > 0) {
+            try {
+                return objectMapper.readValue(redisCommands.get(redisFinalKey), UserPageResponse.class);
+            } catch (JsonProcessingException e) {
+                throw new SerializationException("Error while deserializing from Redis");
+            }
+        }
+
+        PageRequest pageRequest = PageRequest.of(pageNumber, limit);
+
+        String username = usernameOpt.orElse("");
+        String firstname = firstnameOpt.orElse("");
+        String lastname = lastnameOpt.orElse("");
+        String skills = skillsOpt.orElse("");
+        String roleInCommand = roleInCommandOpt.orElse("");
+        String description = descriptionOpt.orElse("");
+        String country = countryOpt.orElse("");
+
+        log.info("Searching users with parameters: username='{}', firstname='{}', lastname='{}', skills='{}', roleInCommand='{}', description='{}', country='{}', page={}, limit={}",
+                username, firstname, lastname, skills, roleInCommand, description, country, pageNumber, limit);
+
+        Page<MyUserDocument> page = elasticRepo.searchUsers(
+                username, firstname, lastname, skills, roleInCommand, description, country, pageRequest
+        );
+
+        System.out.println("Result count: " + page.getTotalElements());
+
+        UserPageResponse userPageResponse = new UserPageResponse(
+                UserMapper.toDto(page.getContent()),
+                page.isLast(),
+                page.getTotalPages(),
+                page.getTotalElements(),
+                page.isFirst(),
+                page.getNumberOfElements()
+        );
+
+        cacheUsers(userPageResponse,redisFinalKey);
+        return userPageResponse;
+    }
+
+    private <T> void cacheUsers(T objectToCash, String key) throws SerializationException {
+        String objectAsString;
+
+        try {
+            objectAsString = objectMapper.writeValueAsString(objectToCash);
+        } catch (JsonProcessingException e) {
+            throw new SerializationException("an error occurred during deserialization");
+        }
+
+        redisCommands.set(key,objectAsString);
+        redisCommands.expire(key,60);
+
+    }
+
+    @Transactional
+    public String toggleFollowing(Authentication authentication, String userName) {
+        MyUser author = userRepo.findByName(userName)
+                .orElseThrow(() -> new UsernameNotFoundException("User with this id doesn't exist"));
+
+        MyUser follower = userRepo.findByName(authentication.getName())
+                .orElseThrow(() -> new UsernameNotFoundException("User with this name doesn't exist"));
+
+        if (author.getId().equals(follower.getId())){
+            throw new IllegalArgumentException("You can't subscribe to yourself");
+        }
+
+        List<Long> authorFollowers = author.getFollowers();
+        List<Long> followerFollowing = follower.getFollowing();
+
+        String action;
+        if (authorFollowers.contains(follower.getId())) {
+            followerFollowing.remove(author.getId());
+            authorFollowers.remove(follower.getId());
+            action = "unsubscribe";
+        } else {
+            followerFollowing.add(author.getId());
+            authorFollowers.add(follower.getId());
+            action = "subscribe";
+        }
+
+        userRepo.save(author);
+        userRepo.save(follower);
+
+        String authorRedisKey = "user_" + author.getId();
+        String followerRedisKey = "user_" + follower.getId();
+
+        deleteRedisKeysByPatterns(author.getId());
+        deleteRedisKeysByPatterns(follower.getId());
+
+        redisCommands.del(authorRedisKey, followerRedisKey);
+
+        return action;
+    }
+
+    private void deleteRedisKeysByPatterns(Long userId) {
+        System.out.println("All Redis keys: " + redisCommands.keys("*"));
+
+        List<String> followingKeys = redisCommands.keys("following:" + userId + ":pageNumber:*");
+        List<String> followersKeys = redisCommands.keys("followers:" + userId + ":pageNumber:*");
+
+        System.out.println("Followings: "+followingKeys);
+        System.out.println("Followers: "+followersKeys);
+
+        if (!followingKeys.isEmpty()) {
+            redisCommands.del(followingKeys.toArray(new String[0]));
+        }
+
+        if (!followersKeys.isEmpty()) {
+            redisCommands.del(followersKeys.toArray(new String[0]));
+        }
+    }
+
+    @Async
+    protected void deleteRedisKeysByPatterns(Long userId,List<Long> followingsList,List<Long> followersList) {
+        if (!followingsList.isEmpty()){
+            followingsList.forEach(id->{
+                deleteRedisKeysByPatterns(id);
+                redisCommands.del("user_"+id);
+            });
+        }
+
+        if (!followersList.isEmpty()){
+            followersList.forEach(id->{
+                deleteRedisKeysByPatterns(id);
+                redisCommands.del("user_"+id);
+            });
+        }
+
+        deleteRedisKeysByPatterns(userId);
+
+    }
+
+    private <T> T checkCache(String key,Class<T> returnType) throws SerializationException {
+        Long redisResult = redisCommands.exists(key);
+        if (redisResult != null && redisResult > 0) {
+            try {
+                return objectMapper.readValue(redisCommands.get(key), returnType);
+            } catch (JsonProcessingException e) {
+                throw new SerializationException("Error while deserializing from Redis");
+            }
+        }else {
+            return null;
+        }
+    }
+
+    public SubscribersPageResponse getUserSubscriptions(String userName, int pageNumber, int limit, HttpServletRequest request) throws SerializationException, ImageNotGetedException {
+        MyUser user = userRepo.findByName(userName)
+                .orElseThrow(() -> new UsernameNotFoundException("User with this id doesn't exist"));
+
+        String redisKey = "following:" + user.getId() + ":pageNumber:" + pageNumber + ":limit:" + limit;
+        System.out.println("Saved to Redis with key: " + redisKey);
+        SubscribersPageResponse cache = checkCache(redisKey, SubscribersPageResponse.class);
+        if (cache != null) {
+            return cache;
+        }
+
+        List<Long> userSubscriptions = user.getFollowing();
+        if (userSubscriptions.isEmpty()) {
+            return new SubscribersPageResponse(Collections.emptyList(), true, 0, 0, true, 0);
+        }
+
+        PageRequest pageRequest = PageRequest.of(pageNumber, limit);
+        Page<Long> pageOfSubscriptions = new PageImpl<>(userSubscriptions, pageRequest, userSubscriptions.size());
+        List<MyUser> subscribedUsers = userRepo.findAllById(pageOfSubscriptions.getContent());
+
+        List<SubscriberDto> subscriberDtos = subscribedUsers.stream()
+                .map(sub -> {
+                    SubscriberDto dto = new SubscriberDto(
+                            sub.getId(),
+                            sub.getName(),
+                            sub.getFirstName(),
+                            sub.getLastName()
+                    );
+                    try {
+                        dto.setProfileImage(getImageInfo(request, sub.getProfileImage()));
+                    } catch (ImageNotGetedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return dto;
+                })
+                .collect(Collectors.toList());
+
+        SubscribersPageResponse result = new SubscribersPageResponse(
+                subscriberDtos,
+                pageOfSubscriptions.isLast(),
+                pageOfSubscriptions.getTotalPages(),
+                pageOfSubscriptions.getTotalElements(),
+                pageOfSubscriptions.isFirst(),
+                pageOfSubscriptions.getNumberOfElements()
+        );
+
+        cacheUsers(result, redisKey);
+        return result;
+    }
+
+    private ProfileImageDtoResponse getImageInfo(HttpServletRequest request,Long userProfileImage) throws ImageNotGetedException {
+        String token = (String) request.getAttribute("jwtToken");
+        if (userProfileImage>0){
+            return sendRequestToGetProfileImage(token,userProfileImage);
+        }else {
+            return new ProfileImageDtoResponse(null,null);
+        }
+    }
+
+    public SubscribersPageResponse getUserSubscribers(String userName, int pageNumber, int limit, HttpServletRequest request) throws SerializationException, ImageNotGetedException {
+        MyUser user = userRepo.findByName(userName)
+                .orElseThrow(() -> new UsernameNotFoundException("User with this id doesn't exist"));
+
+        String redisKey = "followers:" + user.getId() + ":pageNumber:" + pageNumber + ":limit:" + limit;
+        System.out.println("Saved to Redis with key: " + redisKey);
+        SubscribersPageResponse cache = checkCache(redisKey, SubscribersPageResponse.class);
+        if (cache != null) {
+            return cache;
+        }
+
+        PageRequest pageRequest = PageRequest.of(pageNumber, limit);
+        List<Long> userSubscribers = user.getFollowers();
+
+        if (userSubscribers.isEmpty()) {
+            return new SubscribersPageResponse(Collections.emptyList(), true, 0, 0, true, 0);
+        }
+
+        Page<Long> pageOfSubscribers = new PageImpl<>(userSubscribers, pageRequest, userSubscribers.size());
+        List<MyUser> subscribedUsers = userRepo.findAllById(pageOfSubscribers.getContent());
+
+        List<SubscriberDto> subscriberDtos = UserMapper.toSubscriberDto(subscribedUsers);
+
+        for (SubscriberDto subscriberDto : subscriberDtos) {
+            Long profileImageId = userRepo.getReferenceById(subscriberDto.getId()).getProfileImage();
+            subscriberDto.setProfileImage(getImageInfo(request, profileImageId));
+        }
+
+        SubscribersPageResponse result = new SubscribersPageResponse(
+                subscriberDtos,
+                pageOfSubscribers.isLast(),
+                pageOfSubscribers.getTotalPages(),
+                pageOfSubscribers.getTotalElements(),
+                pageOfSubscribers.isFirst(),
+                pageOfSubscribers.getNumberOfElements()
+        );
+
+        cacheUsers(result, redisKey);
+        return result;
+    }
+
 }

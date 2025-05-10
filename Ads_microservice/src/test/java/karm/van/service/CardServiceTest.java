@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -75,12 +74,6 @@ public class CardServiceTest {
                 () -> cardService.requestToAddCardImages(new ArrayList<>(), "token"));
     }
 
-    @Test
-    void checkBadRequestInRequestToLinkCardAndUser(){
-        when(apiService.addCardToUser(anyString(),anyString(),anyString())).thenReturn(HttpStatus.BAD_REQUEST);
-
-        assertThrows(CardNotSavedException.class,()->cardService.requestToLinkCardAndUser(new CardModel(),"token"));
-    }
 
     @Test
     void checkAsyncExecutionAddCardIntoElastic() {

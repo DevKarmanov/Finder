@@ -13,6 +13,8 @@ import java.util.Optional;
 public interface CommentRepo extends JpaRepository<CommentModel,Long> {
     List<CommentModel> getCommentModelByCardId(Long id);
 
+    List<CommentModel> getAllByUserId(Long userId);
+
     Page<CommentModel> getCommentModelByCardIdAndParentCommentIsNull(Long id, Pageable pageable);
 
     @Query("SELECT c.parentComment.id FROM CommentModel c WHERE c.id = :commentId")

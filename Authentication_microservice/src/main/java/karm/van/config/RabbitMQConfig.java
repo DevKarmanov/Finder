@@ -20,7 +20,7 @@ public class RabbitMQConfig {
     @Value("${rabbitmq.queue.recovery.name}")
     public String recoveryQueue;
 
-    @Value("${rabbitmq.exchange}")
+    @Value("${rabbitmq.exchange.message.name}")
     public String exchange;
 
     @Value("${rabbitmq.routing-key.recovery.name}")

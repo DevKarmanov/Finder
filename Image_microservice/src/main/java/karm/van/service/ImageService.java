@@ -125,9 +125,7 @@ public class ImageService {
     }
 
     @Transactional
-    public void moveAllImagesBetweenBuckets(List<Long> imagesId, String authorization, String targetBucket) throws TokenNotExistException{
-        String token = authorization.substring(7);
-        checkToken(token);
+    public void moveAllImagesBetweenBuckets(List<Long> imagesId,String targetBucket) throws TokenNotExistException{
 
         List<ImageModel> images = imageRepo.findAllById(imagesId);
         images.parallelStream().forEach(imageModel -> {
@@ -142,9 +140,7 @@ public class ImageService {
     }
 
     @Transactional
-    public void moveImageBetweenBuckets(Long imagesId, String authorization, String targetBucket) throws TokenNotExistException, ImageNotFoundException {
-        String token = authorization.substring(7);
-        checkToken(token);
+    public void moveImageBetweenBuckets(Long imagesId, String targetBucket) throws TokenNotExistException, ImageNotFoundException {
 
         ImageModel image = imageRepo.findById(imagesId)
                 .orElseThrow(() -> new ImageNotFoundException("Image with this id doesn't exist"));
@@ -160,8 +156,7 @@ public class ImageService {
 
 
     @Transactional
-    public void deleteAllImages(List<Long> imagesId,String authorization) throws TokenNotExistException {
-        checkToken(authorization.substring(7));
+    public void deleteAllImages(List<Long> imagesId) throws TokenNotExistException {
         List<ImageModel> images = imageRepo.findAllById(imagesId);
         images.parallelStream().forEach(imageModel -> {
             try {
@@ -175,9 +170,7 @@ public class ImageService {
     }
 
     @Transactional
-    public void deleteImage(Long imageId, String authorization) throws ImageNotFoundException, ImageNotDeletedException, TokenNotExistException {
-        String token = authorization.substring(7);
-        checkToken(token);
+    public void deleteImage(Long imageId) throws ImageNotFoundException, ImageNotDeletedException, TokenNotExistException {
         ImageModel imageModel = imageRepo.findById(imageId)
                 .orElseThrow(() -> new ImageNotFoundException("Image with this id doesn't exist"));
 
@@ -256,7 +249,7 @@ public class ImageService {
 
         UserDtoRequest user = requestToGetUserByToken(token);
 
-        String redisKey = "user_"+user.name();
+        String redisKey = "user_"+user.id();
 
         System.out.println("PHOTO REDIS KEY: "+redisKey);
         redisCommands.del(redisKey);

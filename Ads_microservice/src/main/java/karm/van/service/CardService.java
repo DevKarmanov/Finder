@@ -10,9 +10,11 @@ import karm.van.dto.card.CardDto;
 import karm.van.dto.card.CardPageResponseDto;
 import karm.van.dto.card.ElasticPatchDto;
 import karm.van.dto.card.FullCardDtoForOutput;
+import karm.van.dto.comment.FullCommentDtoResponse;
 import karm.van.dto.complaint.ComplaintType;
 import karm.van.dto.image.ImageDto;
 import karm.van.dto.message.EmailDataDto;
+import karm.van.dto.rollBack.RollBackCommand;
 import karm.van.dto.user.UserDtoRequest;
 import karm.van.exception.card.CardNotDeletedException;
 import karm.van.exception.card.CardNotFoundException;
@@ -45,10 +47,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -173,18 +172,18 @@ public class CardService {
         return imagesId;
     }
 
-    void requestToLinkCardAndUser(CardModel cardModel, String token) throws CardNotSavedException {
+    void requestToLinkCardAndUser(CardModel cardModel, Long authorId) throws CardNotSavedException {
         String url = apiService.buildUrl(
                 authenticationProperties.getPrefix(),
                 authenticationProperties.getHost(),
                 authenticationProperties.getPort(),
                 authenticationProperties.getEndpoints().getAddCardToUser(),
-                cardModel.getId());
+                cardModel.getId(),authorId);
 
         HttpStatusCode result;
 
         try {
-            result = apiService.addCardToUser(url, token, apiKey);
+            result = apiService.addCardToUser(url, apiKey);
         } catch (NullPointerException e) {
             log.error("Method addCardToUser returned the value null");
             throw e;
@@ -197,18 +196,32 @@ public class CardService {
     }
 
     @Async
-    protected void rollBackCard(Long cardId, String token) throws CardNotSavedException, CardNotFoundException {
+    protected void rollBackCard(Long cardId,Long userId) throws CardNotFoundException {
         CardModel cardModel = cardRepo.getCardModelById(cardId).orElseThrow(()->new CardNotFoundException("Card with this id doesn't found"));
-        requestToLinkCardAndUser(cardModel,token);
+        RollBackCommand rollBackCommand = RollBackCommand.builder()
+                .rollbackType("CardAndUserLink")
+                .params(Map.of("cardModel",cardModel,"userId",userId))
+                .build();
+        brokerProducer.sendRollBack(rollBackCommand);
+        //requestToLinkCardAndUser(cardModel,token);
     }
 
-    private void requestToDeleteImagesFromMinio(List<Long> imageIds,String token){
+    private void requestToDeleteImagesFromMinio(List<Long> imageIds){
         apiService.sendDeleteImagesFromMinioRequest(apiService.buildUrl(
                 imageProperties.getPrefix(),
                 imageProperties.getHost(),
                 imageProperties.getPort(),
                 imageProperties.getEndpoints().getDelImagesFromMinio()
-        ), imageIds, token, apiKey);
+        ), imageIds, apiKey);
+    }
+
+    @Async
+    protected void asyncRollBackSavedImages(List<Long> imageIds){
+        RollBackCommand rollBackCommand = RollBackCommand.builder()
+                .rollbackType("DeleteSavedImages")
+                .params(Map.of("listOfImageIds",imageIds))
+                .build();
+        brokerProducer.sendRollBack(rollBackCommand);
     }
 
     private void requestToUnlinkFavoriteCardFromAllUsers(Long cardId, String token) throws CardNotDeletedException {
@@ -218,16 +231,16 @@ public class CardService {
                 authenticationProperties.getPort(),
                 authenticationProperties.getEndpoints().getUnlinkFavoriteCardFromAllUsers(),cardId);
         System.out.println("URI: "+url);
-        var status = apiService.requestToUnlinkFavoriteCardAndUser(url,token,apiKey);
+        try {
+            var status = apiService.requestToUnlinkFavoriteCardAndUser(url,token,apiKey);
 
-        if (status.isError()){
-            throw new CardNotDeletedException("An error occurred when deleting cards from favorites");
+            if (status.isError()){
+                throw new CardNotDeletedException("An error occurred when deleting cards from favorites");
+            }
+        }catch (Exception e){
+            throw new CardNotDeletedException(e.getMessage());
         }
-    }
 
-    @Async
-    protected void requestToDeleteImagesFromMinioAsync(List<Long> imageIds,String token){
-        requestToDeleteImagesFromMinio(imageIds,token);
     }
 
     @Async
@@ -270,7 +283,7 @@ public class CardService {
             cardModel.setTags(cardDto.tags());
             cardRepo.save(cardModel);
 
-            requestToLinkCardAndUser(cardModel,token);
+            requestToLinkCardAndUser(cardModel,user.id());
             addCardIntoElastic(cardModel);
             invalidatePaginationCaches();
             if (send){
@@ -282,7 +295,7 @@ public class CardService {
             throw e;
         } catch (Exception e) {
             if (!imageIds.isEmpty()) {
-                requestToDeleteImagesFromMinioAsync(imageIds,token);
+                asyncRollBackSavedImages(imageIds);
             }
             log.error("class: " + e.getClass() + ", message: " + e.getMessage());
             throw new RuntimeException("Unexpected error occurred", e);
@@ -344,7 +357,7 @@ public class CardService {
         return fullCardDtoForOutput;
     }
 
-    private void moveImagesToTrashBucket(List<Long> imagesId, String token) throws ImageNotMovedException {
+    private void moveImagesToTrashBucket(List<Long> imagesId) throws ImageNotMovedException {
         String imageUrl = apiService.buildUrl(
                 imageProperties.getPrefix(),
                 imageProperties.getHost(),
@@ -352,7 +365,7 @@ public class CardService {
                 imageProperties.getEndpoints().getMoveImage()
         );
         try {
-            HttpStatusCode httpStatusCode = apiService.moveImagesToTrashPackage(imageUrl, imagesId, token, apiKey);
+            HttpStatusCode httpStatusCode = apiService.moveImagesToTrashPackage(imageUrl, imagesId, apiKey);
             if (httpStatusCode != HttpStatus.OK) {
                 throw new ImageNotMovedException("An error occurred on the server side during the image moving");
             }
@@ -361,7 +374,7 @@ public class CardService {
         }
     }
 
-    private void sendRequestToDellAllComments(Long cardId, String token) throws CommentNotDeletedException {
+    private List<FullCommentDtoResponse> sendRequestToDellAllComments(Long cardId, String token) throws CommentNotDeletedException {
         String commentUrl = apiService.buildUrl(
                 commentProperties.getPrefix(),
                 commentProperties.getHost(),
@@ -370,26 +383,27 @@ public class CardService {
                 cardId
         );
         try {
-            HttpStatusCode commentStatusCode = apiService.requestToDelAllCommentsByCard(commentUrl,token,apiKey);
-
-            if (commentStatusCode != HttpStatus.OK) {
-                throw new CommentNotDeletedException("An error occurred on the server side during the deletion of comments");
-            }
+            return apiService.requestToDelAllCommentsByCard(commentUrl,token,apiKey);
         } catch (Exception e){
             throw new CommentNotDeletedException(e.getMessage());
         }
     }
 
     @Async
-    protected void rollBackImages(List<Long> imagesId, String token){
-        String imageUrl = apiService.buildUrl(
-                imageProperties.getPrefix(),
-                imageProperties.getHost(),
-                imageProperties.getPort(),
-                imageProperties.getEndpoints().getMoveImage());
-
-
-        apiService.moveImagesToImagePackage(imageUrl, imagesId, token, apiKey);
+    protected void rollBackImages(List<Long> imagesId){
+//        String imageUrl = apiService.buildUrl(
+//                imageProperties.getPrefix(),
+//                imageProperties.getHost(),
+//                imageProperties.getPort(),
+//                imageProperties.getEndpoints().getMoveImage());
+//
+//
+//        apiService.moveImagesToImagePackage(imageUrl, imagesId, token, apiKey);
+        RollBackCommand rollBackCommand = RollBackCommand.builder()
+                .rollbackType("MoveImagesToImagePackage")
+                .params(Map.of("listOfImageIds",imagesId))
+                .build();
+        brokerProducer.sendRollBack(rollBackCommand);
     }
 
     private void checkUserPermissions(String token, CardModel cardModel) throws UsernameNotFoundException, NotEnoughPermissionsException {
@@ -429,6 +443,22 @@ public class CardService {
         brokerProducer.saveInBroker(cardModel);
     }
 
+    @Async
+    protected void rollBackComments(List<FullCommentDtoResponse> deletedComments){
+        try {
+            String deletedCommentsJson = objectMapper.writeValueAsString(deletedComments);
+            RollBackCommand rollBackCommand = RollBackCommand.builder()
+                    .rollbackType("RestoreDeletedComments")
+                    .params(Map.of("listOfComments",deletedCommentsJson))
+                    .build();
+
+            brokerProducer.sendRollBack(rollBackCommand);
+        }catch (Exception e){
+            throw new RuntimeException(e.getMessage());
+        }
+
+    }
+
 
     private void invalidatePaginationCaches() {
         String tag = "cards_pagination";
@@ -439,7 +469,7 @@ public class CardService {
             redisCommands.del(tag);
         }
     }
-//todo доделать откат на моменте unlinkFavoriteCardFromAllUsers
+
     @Transactional
     public void deleteCard(Long cardId, String authorization) throws CardNotFoundException, TokenNotExistException, CommentNotDeletedException, ImageNotMovedException, UsernameNotFoundException, NotEnoughPermissionsException, CardNotSavedException, CardNotDeletedException {
         String token = authorization.substring(7);
@@ -450,6 +480,8 @@ public class CardService {
         CardModel cardModel = cardRepo.getCardModelById(cardId)
                 .orElseThrow(() -> new CardNotFoundException("Card with this id doesn't exist"));
 
+        Long authorId = cardModel.getUserId();
+
         checkUserPermissions(token,cardModel);
 
         complaintRepo.deleteAllByTargetIdAndComplaintType(cardId, ComplaintType.CARD);
@@ -457,26 +489,31 @@ public class CardService {
         redisCommands.del(key);
 
         List<Long> imagesId = cardModel.getImgIds();
+        List<FullCommentDtoResponse> deletedComments = new ArrayList<>();
         try {
             requestToUnlinkCardFromUser(token,cardId);
-            moveImagesToTrashBucket(imagesId,token);
-            sendRequestToDellAllComments(cardId,token);
+            moveImagesToTrashBucket(imagesId);
+            deletedComments.addAll(sendRequestToDellAllComments(cardId,token));
             requestToUnlinkFavoriteCardFromAllUsers(cardId,token);
 
-            requestToDeleteImagesFromMinio(imagesId,token);
+            requestToDeleteImagesFromMinio(imagesId);
 
             cardRepo.deleteById(cardId);
             delCardIntoElastic(cardModel);
             invalidatePaginationCaches();
         } catch (ImageNotMovedException e) {
-            rollBackCard(cardId,token);
+            rollBackCard(cardId,authorId);
             throw e;
         } catch (CommentNotDeletedException e){
-            rollBackImages(imagesId,token);
-            rollBackCard(cardId,token);
-            //todo rollBackComments
+            rollBackImages(imagesId);
+            rollBackCard(cardId,authorId);
             throw e;
-        } catch (Exception e) {
+        } catch (CardNotDeletedException e){
+            rollBackImages(imagesId);
+            rollBackCard(cardId,authorId);
+            rollBackComments(deletedComments);
+            throw e;
+        }catch (Exception e) {
             log.error("An unknown error occurred while deleting the card: "+e.getMessage()+" - "+e.getClass());
             throw new RuntimeException("Unexpected error occurred", e);
         }
@@ -575,7 +612,7 @@ public class CardService {
         Long redisResult = redisCommands.exists(key);
         if (cardChange && (redisResult!=null && redisResult>0)){
             UserDtoRequest user = requestToGetUserByToken(token);
-            String redisProfileKey = "user_"+user.name();
+            String redisProfileKey = "user_"+user.id();
             redisCommands.del(key,redisProfileKey);
             invalidatePaginationCaches();
         }
@@ -602,7 +639,7 @@ public class CardService {
         }
     }
 
-    private HttpStatusCode sendRequestToDeleteInoImageFromDB(String token, Long imageId) throws ImageNotDeletedException {
+    private HttpStatusCode sendRequestToDeleteInoImageFromDB(Long imageId) throws ImageNotDeletedException {
         try {
             return apiService.requestToDeleteOneImageFromDB(apiService.buildUrl(
                     imageProperties.getPrefix(),
@@ -610,7 +647,7 @@ public class CardService {
                     imageProperties.getPort(),
                     imageProperties.getEndpoints().getDelOneImageFromCard(),
                     imageId
-            ),token,apiKey);
+            ),apiKey);
         } catch (Exception e){
             throw new ImageNotDeletedException("Due to an error, the image was not deleted");
         }
@@ -626,7 +663,7 @@ public class CardService {
 
         checkUserPermissions(token,card);
 
-        if (sendRequestToDeleteInoImageFromDB(token,imageId) != HttpStatus.OK){
+        if (sendRequestToDeleteInoImageFromDB(imageId) != HttpStatus.OK){
             throw new ImageNotDeletedException("Due to an error, the image was not deleted");
         }
 

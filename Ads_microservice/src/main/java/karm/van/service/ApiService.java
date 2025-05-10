@@ -1,6 +1,7 @@
 package karm.van.service;
 
 import jakarta.annotation.PostConstruct;
+import karm.van.dto.comment.FullCommentDtoResponse;
 import karm.van.dto.image.ImageDto;
 import karm.van.dto.user.UserDtoRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -46,35 +47,57 @@ public class ApiService {
                 .block();
     }
 
-    private HttpStatusCode sendPostRequest(String url, String token, String apiKey) {
+    private HttpStatusCode sendPostRequest(String url, String apiKey) {
         return Objects.requireNonNull(
                 webClient
-                    .post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .headers(headers -> {
-                        headers.setBearerAuth(token);
-                        headers.set("x-api-key", apiKey);
-                    })
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block()
-                ).getStatusCode();
+                        .post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .headers(headers -> headers.set("x-api-key", apiKey))
+                        .retrieve()
+                        .toBodilessEntity()
+                        .block()
+        ).getStatusCode();
     }
 
-    private HttpStatusCode sendDeleteRequest(String url, String token, String apiKey) {
+    private HttpStatusCode sendDeleteRequest(String url,String apiKey) {
         return Objects.requireNonNull(
                     webClient
                         .delete()
                         .uri(url)
-                        .headers(headers -> {
-                            headers.setBearerAuth(token);
-                            headers.set("x-api-key", apiKey);
-                        })
+                        .headers(headers -> headers.set("x-api-key", apiKey))
                         .retrieve()
                         .toBodilessEntity()
                         .block())
                 .getStatusCode();
+    }
+
+    private HttpStatusCode sendDeleteRequest(String url,String token, String apiKey) {
+        return Objects.requireNonNull(
+                        webClient
+                                .delete()
+                                .uri(url)
+                                .headers(headers -> {
+                                    headers.setBearerAuth(token);
+                                    headers.set("x-api-key", apiKey);
+                                })
+                                .retrieve()
+                                .toBodilessEntity()
+                                .block())
+                .getStatusCode();
+    }
+
+    private <T> T sendDeleteRequest(String url, String token, String apiKey, ParameterizedTypeReference<T> responseType) {
+        return webClient
+                .delete()
+                .uri(url)
+                .headers(headers -> {
+                    headers.setBearerAuth(token);
+                    headers.set("x-api-key", apiKey);
+                })
+                .retrieve()
+                .bodyToMono(responseType)
+                .block();
     }
 
 
@@ -168,34 +191,34 @@ public class ApiService {
     }
 
 
-    public HttpStatusCode requestToDelAllCommentsByCard(String url, String token, String apiKey) {
-        return sendDeleteRequest(url,token,apiKey);
+    public List<FullCommentDtoResponse> requestToDelAllCommentsByCard(String url, String token, String apiKey) {
+        return sendDeleteRequest(url,token,apiKey,new ParameterizedTypeReference<>(){});
     }
 
-    public void sendDeleteImagesFromMinioRequest(String url, List<Long> imagesId, String token, String apiKey) {
+    public HttpStatusCode sendDeleteImagesFromMinioRequest(String url, List<Long> imagesId, String apiKey) {
         String ids = getIds(imagesId);
 
         String fullUrl = UriComponentsBuilder.fromHttpUrl(url)
                 .queryParam("ids", ids)
                 .toUriString();
 
-        sendDeleteRequest(fullUrl,token,apiKey);
+        return sendDeleteRequest(fullUrl,apiKey);
     }
 
     public HttpStatusCode requestToUnlinkFavoriteCardAndUser(String url, String token, String apiKey){
         return sendDeleteRequest(url,token,apiKey);
     }
 
-    public HttpStatusCode requestToDeleteOneImageFromDB(String url, String token, String apiKey) {
-        return sendDeleteRequest(url,token,apiKey);
+    public HttpStatusCode requestToDeleteOneImageFromDB(String url, String apiKey) {
+        return sendDeleteRequest(url,apiKey);
     }
 
     public HttpStatusCode requestToUnlinkCardFromUser(String url, String token, String apiKey) {
         return sendDeleteRequest(url,token,apiKey);
     }
 
-    private HttpStatusCode sendMoveRequest(String url,String token,String apiKey){
-        return sendPostRequest(url,token,apiKey);
+    private HttpStatusCode sendMoveRequest(String url,String apiKey){
+        return sendPostRequest(url,apiKey);
     }
 
     private String getIds(List<?> imagesId){
@@ -204,17 +227,17 @@ public class ApiService {
                 .collect(Collectors.joining(","));
     }
 
-    public void moveImagesToImagePackage(String url, List<Long> imagesId, String token, String apiKey) {
+    public HttpStatusCode moveImagesToImagePackage(String url, List<Long> imagesId, String apiKey) {
         String ids = getIds(imagesId);
 
         String fullUrl = UriComponentsBuilder.fromHttpUrl(url)
                 .queryParam("ids", ids)
                 .toUriString();
 
-        sendMoveRequest(fullUrl,token,apiKey);
+        return sendMoveRequest(fullUrl,apiKey);
     }
 
-    public HttpStatusCode moveImagesToTrashPackage(String url, List<Long> imagesId, String token, String apiKey) {
+    public HttpStatusCode moveImagesToTrashPackage(String url, List<Long> imagesId, String apiKey) {
         String ids = getIds(imagesId);
 
         String fullUrl = UriComponentsBuilder.fromHttpUrl(url)
@@ -222,11 +245,11 @@ public class ApiService {
                 .queryParam("toTrash",true)
                 .toUriString();
 
-        return sendMoveRequest(fullUrl,token,apiKey);
+        return sendMoveRequest(fullUrl,apiKey);
     }
 
-    public HttpStatusCode addCardToUser(String url,String token,String apiKey) throws NullPointerException{
-        return sendPostRequest(url,token,apiKey);
+    public HttpStatusCode addCardToUser(String url,String apiKey) throws NullPointerException{
+        return sendPostRequest(url,apiKey);
     }
 
     public String buildUrl(String prefix, String host, String port, String endpoint, Long... ids) {
@@ -240,6 +263,29 @@ public class ApiService {
         }
 
         return uriBuilder.toUriString();
+    }
+
+    public String buildUrl(String prefix, String host, String port, String endpoint) {
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(prefix + host + ":" + port + endpoint);
+        return uriBuilder.toUriString();
+    }
+
+    private HttpStatusCode sendPostRequest(String url, String apiKey, List<?> requestBody) {
+        return Objects.requireNonNull(
+                webClient
+                        .post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .headers(headers -> headers.set("x-api-key", apiKey))
+                        .bodyValue(requestBody)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .block()
+        ).getStatusCode();
+    }
+
+    public HttpStatusCode requestToRollBackDeletedComments(String url,String apiKey,List<FullCommentDtoResponse> commentDtos){
+        return sendPostRequest(url,apiKey,commentDtos);
     }
 
 }
