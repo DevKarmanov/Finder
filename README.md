@@ -112,6 +112,21 @@ Anyone can participate and borrow code, but it's important to respect the licens
 
 4. Set up the SMTP service.
 
+### Pull Microservice Images
+
+To download the required Docker images, run the following commands:
+
+```bash
+docker pull xusss/message_broker_microservice:latest
+docker pull xusss/comment_microservice:latest
+docker pull xusss/image_microservice:latest
+docker pull xusss/ads_microservice:latest
+docker pull xusss/authentication_microservice:latest
+```
+
+These commands will pull the latest versions of the respective images from Docker Hub.
+
+
 </details>
 
 ---
