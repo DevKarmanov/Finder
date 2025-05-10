@@ -1,6 +1,8 @@
 package karm.van.dto.request;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 public record UserDtoRequest(String name,
                              String password,
@@ -11,5 +13,6 @@ public record UserDtoRequest(String name,
                              String description,
                              String country,
                              String roleInCommand,
-                             String skills) {
+                             String skills,
+                             String adminKey) {
 }

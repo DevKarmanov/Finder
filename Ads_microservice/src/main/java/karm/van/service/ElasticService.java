@@ -2,7 +2,7 @@ package karm.van.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
+import io.lettuce.core.api.sync.RedisCommands;
 import karm.van.config.properties.AuthenticationMicroServiceProperties;
 import karm.van.config.properties.ImageMicroServiceProperties;
 import karm.van.dto.card.CardPageResponseDto;
@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import redis.clients.jedis.JedisPooled;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -30,7 +29,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class ElasticService {
-    private JedisPooled redis;
+    private final RedisCommands<String, String> redisCommands;
     private final ObjectMapper objectMapper;
     private final ElasticRepo elasticRepo;
     private final CardRepo cardRepo;
@@ -38,16 +37,8 @@ public class ElasticService {
     private final ImageMicroServiceProperties imageProperties;
     private final AuthenticationMicroServiceProperties authenticationProperties;
 
-    @Value("${redis.host}")
-    private String redisHost;
-
     @Value("${microservices.x-api-key}")
     private String apiKey;
-
-    @PostConstruct
-    public void init(){
-        redis = new JedisPooled(redisHost,6379);
-    }
 
     private void checkToken(String token) throws TokenNotExistException {
         if (!apiService.validateToken(token,
@@ -61,35 +52,84 @@ public class ElasticService {
         }
     }
 
-    public CardPageResponseDto search(String query, int pageNumber, int limit, String authorization, Optional<LocalDate> createTime) throws SerializationException, TokenNotExistException {
+    public CardPageResponseDto search(String query, int pageNumber, int limit, String authorization,
+                                      Optional<LocalDate> createTimeOpt, Optional<List<String>> tagsOpt)
+            throws SerializationException, TokenNotExistException {
+
         String token = authorization.substring(7);
         checkToken(token);
 
-        StringBuilder redisKey = new StringBuilder("pageNumber:" + pageNumber + ":limit:" + limit + ":" + query);
-        createTime.map(timeFilter-> redisKey.append(":").append(timeFilter));
+        StringBuilder redisKey = new StringBuilder("page:" + pageNumber + ":limit:" + limit + ":query:" + query);
+        createTimeOpt.ifPresent(date -> redisKey.append(":date:").append(date));
+        tagsOpt.ifPresent(tags -> redisKey.append(":tags:").append(String.join(",", tags)));
 
-        if (redis.exists(String.valueOf(redisKey))){
+        String redisKeyStr = redisKey.toString();
+
+        Long redisResult = redisCommands.exists(redisKeyStr);
+        if (redisResult != null && redisResult > 0) {
             try {
-                return objectMapper.readValue(redis.get(String.valueOf(redisKey)), CardPageResponseDto.class);
+                return objectMapper.readValue(redisCommands.get(redisKeyStr), CardPageResponseDto.class);
             } catch (JsonProcessingException e) {
-                throw new SerializationException("an error occurred during serialization");
+                throw new SerializationException("Error while deserializing from Redis");
             }
-        }else {
-            PageRequest pageRequest = PageRequest.of(pageNumber,limit);
-
-            Page<CardDocument> documents = createTime.map(timeFilter->
-                    elasticRepo.findByQueryAndSortByData(query,timeFilter.toString(),pageRequest))
-                    .orElseGet(()-> elasticRepo.findByQuery(query, pageRequest));
-
-            List<Long> ids = documents.stream()
-                    .map(CardDocument::getId)
-                    .toList();
-
-            List<CardModel> cards = cardRepo.findAllById(ids);
-            return cacheCards(cards,documents,token, String.valueOf(redisKey));
         }
 
+        PageRequest pageRequest = PageRequest.of(pageNumber, limit);
+        Page<CardDocument> documents;
+
+        boolean hasQuery = query != null && !query.isBlank();
+        boolean hasDate = createTimeOpt.isPresent();
+        boolean hasTags = tagsOpt.isPresent() && !tagsOpt.get().isEmpty();
+
+        // лог
+        System.out.println("=== [SEARCH REQUEST] ===");
+        System.out.println("Query: " + query);
+        System.out.println("Page: " + pageNumber + ", Limit: " + limit);
+        System.out.println("Authorization token: " + token);
+        System.out.println("CreateTime filter: " + (createTimeOpt.map(LocalDate::toString).orElse("none")));
+        System.out.println("Tags filter: " + (hasTags ? String.join(", ", tagsOpt.get()) : "none"));
+        System.out.println("Redis key: " + redisKeyStr);
+
+        if (hasQuery) {
+            if (hasDate && hasTags) {
+                System.out.println("Search type: query + date + tags");
+                documents = elasticRepo.findByQueryWithFilters(query, createTimeOpt.get().toString(), tagsOpt.get(), pageRequest);
+            } else if (hasDate) {
+                System.out.println("Search type: query + date");
+                documents = elasticRepo.findByQueryAndDateOnly(query, createTimeOpt.get().toString(), pageRequest);
+            } else if (hasTags) {
+                System.out.println("Search type: query + tags");
+                documents = elasticRepo.findByQueryWithFilters(query, "1970-01-01", tagsOpt.get(), pageRequest);
+            } else {
+                System.out.println("Search type: query only");
+                documents = elasticRepo.findByQueryOnly(query, pageRequest);
+            }
+        } else {
+            if (hasDate && hasTags) {
+                System.out.println("Search type: date + tags (no query)");
+                documents = elasticRepo.findByFiltersOnly(createTimeOpt.get().toString(), tagsOpt.get(), pageRequest);
+            } else if (hasDate) {
+                System.out.println("Search type: date only (no query)");
+                documents = elasticRepo.findByDateOnly(createTimeOpt.get().toString(), pageRequest);
+            } else if (hasTags) {
+                System.out.println("Search type: tags only (no query)");
+                documents = elasticRepo.findByTagsOnly(tagsOpt.get(), pageRequest);
+            } else {
+                System.out.println("Search type: no filters (return all)");
+                documents = elasticRepo.findAll(pageRequest);
+            }
+        }
+
+        System.out.println("Result count: " + documents.getTotalElements());
+
+        List<Long> ids = documents.stream().map(CardDocument::getId).toList();
+        List<CardModel> cards = cardRepo.findAllById(ids);
+
+        return cacheCards(cards, documents, token, redisKeyStr);
     }
+
+
+
 
     private CardPageResponseDto cacheCards(List<CardModel> cards,Page<CardDocument> page, String token, String key) throws SerializationException {
         String objectAsString;
@@ -108,8 +148,8 @@ public class ElasticService {
             throw new SerializationException("an error occurred during deserialization");
         }
 
-        redis.set(key,objectAsString);
-        redis.expire(key,60);
+        redisCommands.set(key,objectAsString);
+        redisCommands.expire(key,60);
 
         return cardPageResponseDto;
     }
@@ -123,6 +163,7 @@ public class ElasticService {
                                 card.getTitle(),
                                 card.getText(),
                                 card.getCreateTime(),
+                                card.getTags(),
                                 requestToGetAllCardImages(card,token),
                                 requestToGetUserById(token,card.getUserId()).name());
                     } catch (UsernameNotFoundException e) {

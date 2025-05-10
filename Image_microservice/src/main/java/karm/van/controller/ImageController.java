@@ -1,5 +1,11 @@
 package karm.van.controller;
 
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import karm.van.dto.ImageDto;
 import karm.van.exception.*;
 import karm.van.service.ImageService;
@@ -31,6 +37,7 @@ public class ImageController {
     @Value("${minio.bucketNames.trash-bucket}")
     private String minioTrashBucket;
 
+    @Hidden
     @GetMapping("/get")
     public List<ImageDto> getCardImages(@RequestParam List<Long> imagesId,
                                         @RequestHeader("x-api-key") String key,
@@ -41,6 +48,7 @@ public class ImageController {
         return imageService.getImages(imagesId,authorization);
     }
 
+    @Hidden
     @GetMapping("/get-one/{imageId}")
     public ResponseEntity<?> getImage(@PathVariable Long imageId,
                                       @RequestHeader("Authorization") String authorization,
@@ -59,16 +67,16 @@ public class ImageController {
         }
     }
 
+    @Hidden
     @DeleteMapping("/del/{imageId}")
     public ResponseEntity<?> deleteOneImage(@PathVariable Long imageId,
-                               @RequestHeader("Authorization") String authorization,
                                @RequestHeader("x-api-key") String key){
 
         try {
             if(imageService.checkNoneEqualsApiKey(key)){
                 throw new InvalidApiKeyException("Invalid api-key");
             }
-            imageService.deleteImage(imageId,authorization);
+            imageService.deleteImage(imageId);
             return ResponseEntity.ok("Success delete");
         } catch (ImageNotFoundException | TokenNotExistException | InvalidApiKeyException e) {
             log.error("Error deleting image: {}", e.getMessage(), e);
@@ -78,6 +86,7 @@ public class ImageController {
         }
     }
 
+    @Hidden
     @PostMapping(value = "/addCardImages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public List<Long> addCardImages(@RequestPart("files") List<MultipartFile> files,
                                     @RequestPart("currentCardImagesCount") int currentCardImagesCount,
@@ -95,13 +104,32 @@ public class ImageController {
     }
 
     @PostMapping(value = "/addProfileImage", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> addProfileImage(@RequestPart("profileImage") MultipartFile profileImage,
-                                    @RequestHeader("Authorization") String authorization) {
+    @Operation(
+            summary = "Add a profile image",
+            description = "Adds an image as the user's profile picture."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Profile image added successfully"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized: Invalid or missing token"),
+            @ApiResponse(responseCode = "500", description = "Internal Server Error: Error while saving the profile image")
+    })
+    @Parameter(
+            name = "Authorization",
+            in = ParameterIn.HEADER,
+            required = true,
+            description = "JWT token in the format: Bearer &lt;token&gt;"
+    )
+    public ResponseEntity<?> addProfileImage(
+            @Parameter(description = "The profile image to be uploaded")
+            @RequestPart("profileImage") MultipartFile profileImage,
+
+            @RequestHeader("Authorization") String authorization) {
+
         try {
-            imageService.addProfileImage(profileImage,authorization,minioProfileImageBucket);
+            imageService.addProfileImage(profileImage, authorization, minioProfileImageBucket);
             return ResponseEntity.ok("The profile picture has been successfully added");
-        } catch (TokenNotExistException e){
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("invalid token");
+        } catch (TokenNotExistException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
         } catch (ImageNotSavedException e) {
             log.error("Error adding profile image: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
@@ -111,10 +139,10 @@ public class ImageController {
         }
     }
 
+    @Hidden
     @PostMapping(value = "/move")
     public ResponseEntity<?> moveImagesBetweenBuckets(@RequestParam List<Long> ids,
                                                       @RequestParam(value = "toTrash",required = false,defaultValue = "false") Boolean toTrash,
-                                                      @RequestHeader("Authorization") String authorization,
                                                       @RequestHeader("x-api-key") String key) {
 
 
@@ -126,7 +154,7 @@ public class ImageController {
 
             String bucketToMove = toTrash? minioTrashBucket:minioImageBucket;
 
-            imageService.moveAllImagesBetweenBuckets(ids,authorization,bucketToMove);
+            imageService.moveAllImagesBetweenBuckets(ids,bucketToMove);
             return ResponseEntity.ok("ok");
         } catch (TokenNotExistException | InvalidApiKeyException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -136,9 +164,9 @@ public class ImageController {
         }
     }
 
+    @Hidden
     @PostMapping(value = "/profile/move/{imageId}")
     public ResponseEntity<?> moveProfileImagesBetweenBuckets(@PathVariable Long imageId,
-                                                             @RequestHeader("Authorization") String authorization,
                                                              @RequestParam(value = "toTrash",required = false,defaultValue = "false") Boolean toTrash,
                                                              @RequestHeader("x-api-key") String key) {
 
@@ -150,19 +178,19 @@ public class ImageController {
             }
             String bucketToMove = toTrash? minioTrashBucket:minioProfileImageBucket;
 
-            imageService.moveImageBetweenBuckets(imageId,authorization,bucketToMove);
+            imageService.moveImageBetweenBuckets(imageId,bucketToMove);
             return ResponseEntity.ok("ok");
         } catch (TokenNotExistException | InvalidApiKeyException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         } catch (Exception e) {
             log.error("Error moving images: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error moving images");
         }
     }
 
+    @Hidden
     @DeleteMapping("/minio/del")
     public ResponseEntity<?> delImagesFromMinio(@RequestParam List<Long> ids,
-                                                @RequestHeader("Authorization") String authorization,
                                                 @RequestHeader("x-api-key") String key) {
 
 
@@ -171,7 +199,7 @@ public class ImageController {
                 throw new InvalidApiKeyException("Invalid api-key");
             }
 
-            imageService.deleteAllImages(ids,authorization);
+            imageService.deleteAllImages(ids);
             return ResponseEntity.ok("Images deleted");
         } catch (TokenNotExistException | InvalidApiKeyException e){
             return ResponseEntity.badRequest().body(e.getMessage());

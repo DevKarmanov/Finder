@@ -21,6 +21,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
 
 redis:
   host: ${REDIS_HOST:localhost}

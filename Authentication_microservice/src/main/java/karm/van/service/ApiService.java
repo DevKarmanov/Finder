@@ -1,6 +1,7 @@
 package karm.van.service;
 
 import jakarta.annotation.PostConstruct;
+import karm.van.dto.response.CommentDto;
 import karm.van.dto.response.ProfileImageDtoResponse;
 import karm.van.dto.response.UserCardResponse;
 import lombok.RequiredArgsConstructor;
@@ -50,30 +51,46 @@ public class ApiService {
         return uriBuilder.toUriString();
     }
 
+    public String buildUrl(String prefix, String host, String port, String endpoint) {
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(prefix + host + ":" + port + endpoint);
+        return uriBuilder.toUriString();
+    }
 
-    private HttpStatusCode sendPostRequest(String url, String token, String apiKey) {
+
+    private HttpStatusCode sendPostRequest(String url, String apiKey) {
         return Objects.requireNonNull(
                 webClient
                         .post()
                         .uri(url)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .headers(headers -> {
-                            headers.setBearerAuth(token);
-                            headers.set("x-api-key", apiKey);
-                        })
+                        .headers(headers -> headers.set("x-api-key", apiKey))
                         .retrieve()
                         .toBodilessEntity()
                         .block()
         ).getStatusCode();
     }
 
-    public HttpStatusCode moveProfileImage(String url, String token, String apiKey, Boolean toTrash) {
+    private HttpStatusCode sendPostRequest(String url, String apiKey, List<?> requestBody) {
+        return Objects.requireNonNull(
+                webClient
+                        .post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .headers(headers -> headers.set("x-api-key", apiKey))
+                        .bodyValue(requestBody)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .block()
+        ).getStatusCode();
+    }
+
+    public HttpStatusCode moveProfileImage(String url, String apiKey, Boolean toTrash) {
 
         String fullUrl = UriComponentsBuilder.fromHttpUrl(url)
                 .queryParam("toTrash",toTrash)
                 .toUriString();
 
-        return sendMoveRequest(fullUrl,token,apiKey);
+        return sendMoveRequest(fullUrl,apiKey);
     }
 
     public HttpStatusCode deleteImageFromMinioRequest(String url, String token, String apiKey) {
@@ -101,6 +118,22 @@ public class ApiService {
                                 .toBodilessEntity()
                                 .block())
                 .getStatusCode();
+    }
+
+    public <T> T sendDeleteRequestForList(String url, String token, String apiKey,ParameterizedTypeReference<T> responseType) {
+
+        return Objects.requireNonNull(
+                webClient
+                        .delete()
+                        .uri(url)
+                        .headers(headers -> {
+                            headers.setBearerAuth(token);
+                            headers.set("x-api-key", apiKey);
+                        })
+                        .retrieve()
+                        .bodyToMono(responseType)
+                        .block()
+        );
     }
 
     private <T> T sendGetResponse(String uri, String token, ParameterizedTypeReference<T> responseType, String apiKey){
@@ -145,8 +178,8 @@ public class ApiService {
         return sendDeleteRequest(url,token);
     }
 
-    private HttpStatusCode sendMoveRequest(String url,String token,String apiKey){
-        return sendPostRequest(url,token,apiKey);
+    private HttpStatusCode sendMoveRequest(String url,String apiKey){
+        return sendPostRequest(url,apiKey);
     }
 
     public List<UserCardResponse> getCardImagesRequest(String uri, String token, String apiKey) {
@@ -166,6 +199,14 @@ public class ApiService {
 
     public HttpStatusCode requestToDeleteAllComplaintByUserId(String uri, String token, String apiKey){
         return sendDeleteRequest(uri,token,apiKey);
+    }
+
+    public List<CommentDto> requestToDeleteAllUserComments(String uri, String token, String apiKey){
+        return sendDeleteRequestForList(uri,token,apiKey,new ParameterizedTypeReference<>() {});
+    }
+
+    public HttpStatusCode requestToRollBackDeletedComments(String url,String apiKey,List<CommentDto> commentDtos){
+        return sendPostRequest(url,apiKey,commentDtos);
     }
 
 }

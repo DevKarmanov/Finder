@@ -7,6 +7,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
 
 server:
   port: 8081

@@ -1,4 +1,4 @@
-package karm.van.config;
+package karm.van.config.properties;
 
 import lombok.Getter;
 import lombok.Setter;

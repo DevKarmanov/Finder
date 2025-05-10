@@ -45,6 +45,7 @@ services:
     restart: always
     networks:
       - app-network
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
 
   minio:
     image: minio/minio:latest
@@ -96,6 +97,7 @@ services:
       REDIS_HOST: redis
       AUTHENTICATION_HOST: auth-microservice
       X_API_KEY: ${X_API_KEY}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       - postgres
       - redis
@@ -141,7 +143,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: redis
       COMMENT_HOST: comment
-      ELASTIC_HOST: elastic
+      ELASTIC_HOST: elasticRepo
       IMAGE_HOST: image-microservice
       AUTHENTICATION_HOST: auth-microservice
       X_API_KEY: ${X_API_KEY}
@@ -151,6 +153,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
       RABBIT_HOST: rabbit
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       - auth-microservice
       - postgres
@@ -180,6 +183,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
       RABBIT_HOST: rabbit
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       - postgres
       - redis
