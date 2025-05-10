@@ -1,5 +1,7 @@
 rabbitmq:
   queue:
+    rollback:
+      name: rollback-queue
     email:
       name: email-queue
     elastic:
@@ -10,11 +12,15 @@ rabbitmq:
       patch:
         name: elasticRepo-queue-patch
   exchange:
+    rollback:
+      name: rollback-exchange
     message:
       name: finder-exchange
     elastic:
       name: elasticRepo-exchange
   routing-key:
+    rollback:
+      name: rollback-routing-key
     email:
       name: email-routing-key
     elastic:
@@ -29,12 +35,12 @@ spring:
   rabbitmq:
     host: ${RABBIT_HOST:localhost}
     port: 5672
-    username: ${RABBITMQ_DEFAULT_USER:LOCAL_RABBITMQ_LOGIN}
-    password: ${RABBITMQ_DEFAULT_PASS:LOCAL_RABBITMQ_PASSWORD}
+    username: ${RABBITMQ_DEFAULT_USER:your-rabbit-username}
+    password: ${RABBITMQ_DEFAULT_PASS:your-rabbit-password}
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:LOCAL_POSTGRES_PORT/DATABASE_NAME}
-    username: ${POSTGRES_USER:LOCAL_POSTGRES_USERNAME}
-    password: ${POSTGRES_PASSWORD:LOCAL_POSTGRES_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/your_database}
+    username: ${POSTGRES_USER:your-db-username}
+    password: ${POSTGRES_PASSWORD:your-db-password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -45,11 +51,11 @@ spring:
       max-file-size: 6MB
   elasticsearch:
     uris: http://${ELASTIC_HOST:localhost}:9200
-    username: ${ELASTIC_USERNAME:my_user}
-    password: ${ELASTIC_PASSWORD:ELASTIC_LOCAL_PASSWORD}
+    username: ${ELASTIC_USERNAME:your-elastic-username}
+    password: ${ELASTIC_PASSWORD:your-elastic-password}
   data:
     redis:
-      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
+      password: ${REDIS_PASSWORD:your-redis-password}
 
 server:
   port: 8080
@@ -58,12 +64,13 @@ redis:
   host: ${REDIS_HOST:localhost}
 
 microservices:
-  x-api-key: ${X_API_KEY:local-api-key}
+  x-api-key: ${X_API_KEY:your-api-key}
   comment:
     prefix: http://
     host: ${COMMENT_HOST:localhost}
     port: 8081
     endpoints:
+      addComments: /comment/add/all
       dellAllCommentsByCard: /comment/delAll/
   image:
     prefix: http://
@@ -84,6 +91,7 @@ microservices:
       user: /user/get
       addCardToUser: /user/addCard
       unlinkCardFromUser: /user/card/del
+      unlinkFavoriteCardFromAllUsers: /user/card/favorite/unlink
 
 card:
   images:
@@ -91,4 +99,4 @@ card:
 
 email:
   settings:
-    send: ${SEND_EMAIL_MESSAGE:false}
+    send: ${SEND_EMAIL_MESSAGE:true}

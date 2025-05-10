@@ -1,8 +1,11 @@
 spring:
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:your-redis-password}
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:LOCAL_POSTGRES_PORT/DATABASE_NAME}
-    username: ${POSTGRES_USER:LOCAL_POSTGRES_USERNAME}
-    password: ${POSTGRES_PASSWORD:LOCAL_POSTGRES_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/your_database}
+    username: ${POSTGRES_USER:your-db-username}
+    password: ${POSTGRES_PASSWORD:your-db-password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -12,10 +15,13 @@ spring:
       max-request-size: 30MB
       max-file-size: 6MB
 
+redis:
+  host: ${REDIS_HOST:localhost}
+
 minio:
-  user: ${MINIO_USERNAME:LOCAL_MINIO_USERNAME}
-  password: ${MINIO_PASSWORD:LOCAL_MINIO_PASSWORD}
-  endpoint: ${MINIO_ENDPOINT:localhost}
+  user: ${MINIO_USERNAME:your-minio-username}
+  password: ${MINIO_PASSWORD:your-minio-password}
+  endpoint: ${MINIO_ENDPOINT:your-minio-endpoint}
   bucketNames:
     image-bucket: images
     trash-bucket: trash
@@ -29,7 +35,7 @@ card:
     count: 6
 
 microservices:
-  x-api-key: ${X_API_KEY:local-api-key}
+  x-api-key: ${X_API_KEY:your-api-key}
   authentication:
     prefix: http://
     host: ${AUTHENTICATION_HOST:localhost}
@@ -37,3 +43,5 @@ microservices:
     endpoints:
       validateToken: /auth/validate
       addProfileImage: /user/addProfileImage
+      user: /user/get
+

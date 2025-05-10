@@ -15,13 +15,13 @@ spring:
   rabbitmq:
     host: ${RABBIT_HOST:localhost}
     port: 5672
-    username: ${RABBITMQ_DEFAULT_USER:LOCAL_RABBITMQ_LOGIN}
-    password: ${RABBITMQ_DEFAULT_PASS:LOCAL_RABBITMQ_PASSWORD}
+    username: ${RABBITMQ_DEFAULT_USER:your-rabbitmq-username}
+    password: ${RABBITMQ_DEFAULT_PASS:your-rabbitmq-password}
   mail:
-    host: ${SMTP_HOST:smtp.gmail.com}
+    host: ${SMTP_HOST:smtp.your-mail.com}
     port: ${SMTP_PORT:587}
-    username: ${SMTP_MAIL:email@example.com}
-    password: ${SMTP_PASSWORD:email password}
+    username: ${SMTP_MAIL:your-email@example.com}
+    password: ${SMTP_PASSWORD:your-smtp-password}
     test-connection: true
     properties:
       mail:
@@ -29,5 +29,6 @@ spring:
           auth: true
           starttls:
             enable: true
+
 server:
   port: 8085

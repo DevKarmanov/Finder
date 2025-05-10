@@ -1,15 +1,15 @@
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:LOCAL_POSTGRES_PORT/DATABASE_NAME}
-    username: ${POSTGRES_USER:LOCAL_POSTGRES_USERNAME}
-    password: ${POSTGRES_PASSWORD:LOCAL_POSTGRES_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/your_database}
+    username: ${POSTGRES_USER:your-db-username}
+    password: ${POSTGRES_PASSWORD:your-db-password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: update
   data:
     redis:
-      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
+      password: ${REDIS_PASSWORD:your-redis-password}
 
 server:
   port: 8081
@@ -18,7 +18,7 @@ redis:
   host: ${REDIS_HOST:localhost}
 
 microservices:
-  x-api-key: ${X_API_KEY:local-api-key}
+  x-api-key: ${X_API_KEY:your-api-key}
   authentication:
     prefix: http://
     host: ${AUTHENTICATION_HOST:localhost}

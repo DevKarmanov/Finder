@@ -1,29 +1,57 @@
 rabbitmq:
   queue:
+    rollback:
+      name: rollback-queue
     recovery:
       name: recovery-queue
-  exchange: finder-exchange
+    elastic:
+      save:
+        name: elasticRepo-queue-user-save
+      del:
+        name: elasticRepo-queue-user-del
+      patch:
+        name: elasticRepo-queue-user-patch
+  exchange:
+    rollback:
+      name: rollback-exchange
+    message:
+      name: finder-exchange
+    elastic:
+      name: elasticRepo-user-exchange
   routing-key:
+    rollback:
+      name: rollback-routing-key
     recovery:
       name: recovery-routing-key
+    elastic:
+      save:
+        name: elasticRepo-routing-key-user-save
+      del:
+        name: elasticRepo-routing-key-user-del
+      patch:
+        name: elasticRepo-routing-key-user-patch
 
 spring:
   rabbitmq:
     host: ${RABBIT_HOST:localhost}
     port: 5672
-    username: ${RABBITMQ_DEFAULT_USER:LOCAL_RABBITMQ_LOGIN}
-    password: ${RABBITMQ_DEFAULT_PASS:LOCAL_RABBITMQ_PASSWORD}
+    username: ${RABBITMQ_DEFAULT_USER:your-rabbit-username}
+    password: ${RABBITMQ_DEFAULT_PASS:your-rabbit-password}
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:LOCAL_POSTGRES_PORT/DATABASE_NAME}
-    username: ${POSTGRES_USER:LOCAL_POSTGRES_USERNAME}
-    password: ${POSTGRES_PASSWORD:LOCAL_POSTGRES_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/your_database}
+    username: ${POSTGRES_USER:your-db-username}
+    password: ${POSTGRES_PASSWORD:your-db-password}
     driver-class-name: org.postgresql.Driver
+  elasticsearch:
+    uris: http://${ELASTIC_HOST:localhost}:9200
+    username: ${ELASTIC_USERNAME:your-elastic-username}
+    password: ${ELASTIC_PASSWORD:your-elastic-password}
   jpa:
     hibernate:
       ddl-auto: update
   data:
     redis:
-      password: ${REDIS_PASSWORD:REDIS_LOCAL_PASSWORD}
+      password: ${REDIS_PASSWORD:your-redis-password}
 
 redis:
   host: ${REDIS_HOST:localhost}
@@ -32,15 +60,22 @@ server:
   port: 8083
 
 jwt:
-  secret-key: your-secret-key
+  secret-key: your-jwt-secret-key
 
 microservices:
-  x-api-key: ${X_API_KEY:local-api-key}
+  x-api-key: ${X_API_KEY:your-api-key}
   auth:
     prefix: http://
     host: localhost
     endpoints:
       recovery-password: /user/recovery/password
+  comment:
+    prefix: http://
+    host: ${COMMENT_HOST:localhost}
+    port: 8081
+    endpoints:
+      addComments: /comment/add/all
+      deleteCommentsByUser: /comment/delAll/byUser
   ads:
     prefix: http://
     host: ${ADS_HOST:localhost}
