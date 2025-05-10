@@ -44,12 +44,75 @@ Anyone can participate and borrow code, but it's important to respect the licens
 
 ---
 
-## 🚀 Quick Start
+<details>
+  <summary><strong>🚀Quick Start:</strong></summary>
 
-1. Launch the ElasticSearch container, create a user, and add the credentials to the `.env` file.  
-2. Create a PostgreSQL database, and add the database name, user credentials, and password to the `.env` file.  
-3. Set up an SMTP service and specify its details in the `.env` file.  
-4. Everything else will be created and configured automatically — just provide the necessary settings in the `.env` file.  
+1. Fill in the `.env` file.  
+2. Start the containers.  
+3. Create indices in ElasticSearch using the following configuration:
+
+```json
+{
+  "settings": {
+    "analysis": {
+      "normalizer": {
+        "lowercase_normalizer": {
+          "type": "custom",
+          "filter": [
+            "lowercase"
+          ]
+        }
+      },
+      "analyzer": {
+        "custom_russian_english": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "russian_stemmer",
+            "english_stemmer"
+          ]
+        }
+      },
+      "filter": {
+        "russian_stemmer": {
+          "type": "stemmer",
+          "language": "russian"
+        },
+        "english_stemmer": {
+          "type": "stemmer",
+          "language": "english"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "custom_russian_english"
+      },
+      "text": {
+        "type": "text",
+        "analyzer": "custom_russian_english"
+      },
+      "createTime": {
+        "type": "date"
+      },
+      "tags": {
+        "type": "keyword"
+      }
+    }
+  }
+}
+````
+
+4. Set up the SMTP service.
+
+</details>
 
 ---
 
