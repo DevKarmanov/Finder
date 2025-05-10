@@ -113,6 +113,21 @@
 
 4. Настройте SMTP-сервис.
 
+### Скачать образы микросервисов
+
+Чтобы скачать необходимые Docker-образы, выполните следующие команды:
+
+```bash
+docker pull xusss/message_broker_microservice:latest
+docker pull xusss/comment_microservice:latest
+docker pull xusss/image_microservice:latest
+docker pull xusss/ads_microservice:latest
+docker pull xusss/authentication_microservice:latest
+```
+
+Эти команды загрузят последние версии соответствующих образов с Docker Hub.
+
+
 </details>
 
 ---
